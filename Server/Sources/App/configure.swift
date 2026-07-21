@@ -1,8 +1,9 @@
 import Vapor
 import Foundation
+import JWT
 
-/// App bootstrap: JSON coding, database, and routes. Called once from
-/// `entrypoint.swift`. Mirrors FlightBag's configure/routes split.
+/// App bootstrap: JSON coding, config, JWT keys, database, and routes. Called
+/// once from `entrypoint.swift`. Mirrors FlightBag's configure/routes split.
 public func configure(_ app: Application) async throws {
     // ISO8601 JSON on the wire, matched by the iOS client's decoder.
     let encoder = JSONEncoder()
@@ -15,6 +16,15 @@ public func configure(_ app: Application) async throws {
     // Uniform JSON error bodies ({ "error": true, "reason": "..." }).
     app.middleware = .init()
     app.middleware.use(ErrorMiddleware.default(environment: app.environment))
+
+    // Configuration from the environment (.env).
+    app.appConfig = AppConfig.load(app.environment)
+    if app.appConfig.authDevMode {
+        app.logger.warning("AUTH_DEV_MODE is ON — dev sign-in accepted. Do not use in production.")
+    }
+
+    // Sign our session bearer tokens with the HMAC secret.
+    await app.jwt.keys.add(hmac: .init(from: app.appConfig.sessionJWTSecret), digestAlgorithm: .sha256)
 
     // Database: single SQLite file, path overridable for prod/volumes.
     let dbPath = Environment.get("BUDGET_DB_PATH")

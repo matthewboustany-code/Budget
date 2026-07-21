@@ -4,23 +4,44 @@ import Observation
 /// Dependency container injected at the app root. Features reach services
 /// through this — never through singletons — so previews and tests can swap
 /// implementations. Same pattern as FlightBag's `AppEnvironment`.
-///
-/// Feature stores (accounts, transactions, budgets, …) are added to this
-/// container as their phases land; P0 wires the session, API client, and a
-/// lightweight connection check.
 @MainActor
 @Observable
 final class AppEnvironment {
     let session: Session
     let api: APIClient
+    let authStore: AuthStore
+    let householdStore: HouseholdStore
 
-    /// Result of the last `/health` probe, shown in Settings during bring-up.
+    /// Result of the last `/health` probe, shown in Settings.
     var connectionStatus: ConnectionStatus = .unknown
+    /// True while the launch-time `/me` refresh is in flight, so the UI can show
+    /// a splash instead of flashing the onboarding screen.
+    var isBootstrapping = false
 
     init(session: Session? = nil, api: APIClient? = nil) {
         let session = session ?? Session()
+        let api = api ?? APIClient(tokenProvider: session.tokenReader)
         self.session = session
-        self.api = api ?? APIClient(tokenProvider: session.tokenReader)
+        self.api = api
+        self.authStore = AuthStore(api: api, session: session)
+        self.householdStore = HouseholdStore(api: api, session: session)
+    }
+
+    /// On launch, if a session token exists, refresh identity + household from
+    /// the server (signs out on 401). In DEBUG, honors scripted launch args.
+    func bootstrap() async {
+        #if DEBUG
+        if LaunchArgs.has("-resetSession") { session.signOut() }
+        if !session.isSignedIn, let name = LaunchArgs.value(for: "-autoDevSignIn") {
+            isBootstrapping = true
+            await authStore.devSignIn(as: name)
+            isBootstrapping = false
+        }
+        #endif
+        guard session.isSignedIn else { return }
+        isBootstrapping = true
+        await householdStore.refresh()
+        isBootstrapping = false
     }
 
     enum ConnectionStatus: Equatable {
@@ -39,7 +60,7 @@ final class AppEnvironment {
         }
     }
 
-    /// P0 connectivity probe: confirms the app can reach the backend.
+    /// Connectivity probe used by the dashboard/settings banner.
     func checkConnection() async {
         connectionStatus = .checking
         do {

@@ -1,13 +1,40 @@
 import SwiftUI
+import BudgetModels
 
-/// P0 settings: shows the backend URL and connection status, and a disabled
-/// sign-out row (auth arrives in P1). Later phases add household members, the
-/// invite flow, and connection management here.
+/// Household members, the partner-invite flow, backend status, and sign-out.
 struct SettingsView: View {
     @Environment(AppEnvironment.self) private var env
+    @State private var showInvite = false
 
     var body: some View {
         List {
+            if let household = env.session.household {
+                Section("Household") {
+                    LabeledContent("Name", value: household.name)
+                }
+
+                Section("Members") {
+                    ForEach(env.session.members) { member in
+                        MemberRow(member: member,
+                                  isMe: member.id == env.session.member?.id)
+                    }
+                    Button {
+                        showInvite = true
+                        Task { await env.householdStore.generateInvite() }
+                    } label: {
+                        Label("Invite partner", systemImage: "person.badge.plus")
+                    }
+                }
+            }
+
+            Section("You") {
+                LabeledContent("Name", value: env.session.member?.displayName
+                               ?? env.session.user?.displayName ?? "—")
+                if let email = env.session.user?.email {
+                    LabeledContent("Apple ID", value: email)
+                }
+            }
+
             Section("Backend") {
                 LabeledContent("Server", value: ServerConfig.baseURL.absoluteString)
                 ConnectionRow(status: env.connectionStatus)
@@ -16,14 +43,74 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Account") {
-                LabeledContent("Signed in", value: env.session.isSignedIn ? "Yes" : "Not yet")
+            Section {
                 Button("Sign out", role: .destructive) {
                     env.session.signOut()
                 }
-                .disabled(!env.session.isSignedIn)
             }
         }
         .navigationTitle("Settings")
+        .task { await env.checkConnection() }
+        .sheet(isPresented: $showInvite) {
+            InviteSheet()
+        }
+    }
+}
+
+private struct MemberRow: View {
+    let member: HouseholdMember
+    let isMe: Bool
+
+    var body: some View {
+        HStack {
+            Image(systemName: "person.crop.circle.fill")
+                .foregroundStyle(.tint)
+            VStack(alignment: .leading) {
+                Text(member.displayName + (isMe ? " (you)" : ""))
+                Text(member.role.rawValue.capitalized)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// Bottom sheet showing the freshly generated invite code to share.
+private struct InviteSheet: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                if env.householdStore.isWorking {
+                    ProgressView("Generating code…")
+                } else if let invite = env.householdStore.latestInvite {
+                    Text("Share this code with your partner")
+                        .font(.headline)
+                    Text(invite.code)
+                        .font(.system(.largeTitle, design: .monospaced).bold())
+                        .textSelection(.enabled)
+                    ShareLink(item: "Join our Budget household with code \(invite.code)") {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Text("The code can be used once and expires in 7 days.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else if let message = env.householdStore.errorMessage {
+                    Text(message).foregroundStyle(.red)
+                }
+            }
+            .padding()
+            .navigationTitle("Invite partner")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }

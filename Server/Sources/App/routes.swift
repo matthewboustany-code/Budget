@@ -8,4 +8,6 @@ func routes(_ app: Application) throws {
 
     let v1 = app.grouped("v1")
     try registerHealthRoutes(v1)
+    registerAuthRoutes(v1)
+    registerHouseholdRoutes(v1)
 }

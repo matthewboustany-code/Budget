@@ -5,21 +5,26 @@ import SwiftUI
 /// Bills, Goals, and Reports are reached from the Home dashboard rather than
 /// crowding the tab bar.
 struct RootTabView: View {
+    enum TabID: String, Hashable { case home, accounts, transactions, budget, settings }
+
+    @State private var selection: TabID = LaunchArgs.value(for: "-startTab")
+        .flatMap(TabID.init(rawValue:)) ?? .home
+
     var body: some View {
-        TabView {
-            Tab("Home", systemImage: "house.fill") {
+        TabView(selection: $selection) {
+            Tab("Home", systemImage: "house.fill", value: TabID.home) {
                 NavigationStack { DashboardView() }
             }
-            Tab("Accounts", systemImage: "building.columns.fill") {
+            Tab("Accounts", systemImage: "building.columns.fill", value: TabID.accounts) {
                 NavigationStack { AccountsView() }
             }
-            Tab("Transactions", systemImage: "list.bullet.rectangle.fill") {
+            Tab("Transactions", systemImage: "list.bullet.rectangle.fill", value: TabID.transactions) {
                 NavigationStack { TransactionsView() }
             }
-            Tab("Budget", systemImage: "chart.pie.fill") {
+            Tab("Budget", systemImage: "chart.pie.fill", value: TabID.budget) {
                 NavigationStack { BudgetView() }
             }
-            Tab("Settings", systemImage: "gearshape.fill") {
+            Tab("Settings", systemImage: "gearshape.fill", value: TabID.settings) {
                 NavigationStack { SettingsView() }
             }
         }

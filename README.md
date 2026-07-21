@@ -63,6 +63,17 @@ xcodebuild -project Budget.xcodeproj -scheme Budget \
 The app defaults to `http://localhost:8080` (the simulator shares the host
 network). Override for a run with the `-serverBaseURL <url>` launch argument.
 
+> **Keychain needs a signed build.** Running from Xcode signs automatically. For
+> CLI builds, sign (even ad-hoc) so the app gets an `application-identifier` —
+> otherwise Keychain writes fail and the session token won't persist. Use
+> `CODE_SIGN_IDENTITY="-" CODE_SIGNING_ALLOWED=YES` (not `CODE_SIGNING_ALLOWED=NO`).
+
+### Dev auth (no Apple account needed yet)
+The server's `AUTH_DEV_MODE` (on by default outside production) accepts a dev
+token so the whole auth + household flow works without an Apple Developer
+account. In DEBUG the app shows "Sign in as Alice / Bob" buttons, and supports
+scripted launch args: `-resetSession`, `-autoDevSignIn <name>`, `-startTab <id>`.
+
 ## Configuration & secrets
 
 All secrets live in `Server/.env` (git-ignored); `Server/.env.example` is the
@@ -85,7 +96,10 @@ Built in incremental, independently-runnable phases (see
   engine; Vapor server skeleton with GRDB migrations and a `/v1/health` probe;
   iOS app shell (tab navigation, DI container, API client, Keychain) that
   confirms app↔server↔database connectivity.
-- ⬜ P1 — Sign in with Apple + households (invite codes)
+- ✅ **P1 — Auth & households.** Sign in with Apple (Apple identity-token
+  verification + our own session JWTs, with a dev-auth mode for testing);
+  create/join a household via single-use invite codes; per-household membership.
+  Onboarding + Settings UI. 5 server tests cover the full couples flow.
 - ⬜ P2 — Plaid link + accounts & net worth
 - ⬜ P3 — Transactions (+ couples chat/reactions)
 - ⬜ P4 — Monarch-style monthly budgets
