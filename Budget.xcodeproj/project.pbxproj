@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		BC0DE70000000000000000A4 /* BudgetModels in Frameworks */ = {isa = PBXBuildFile; productRef = BC0DE70000000000000000A2 /* BudgetModels */; };
+		BC0DE70000000000000000A5 /* BudgetKit in Frameworks */ = {isa = PBXBuildFile; productRef = BC0DE70000000000000000A3 /* BudgetKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		42A41F91300FB5A900A17450 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +57,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BC0DE70000000000000000A4 /* BudgetModels in Frameworks */,
+				BC0DE70000000000000000A5 /* BudgetKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +119,8 @@
 			);
 			name = Budget;
 			packageProductDependencies = (
+				BC0DE70000000000000000A2 /* BudgetModels */,
+				BC0DE70000000000000000A3 /* BudgetKit */,
 			);
 			productName = Budget;
 			productReference = 42A41F83300FB5A700A17450 /* Budget.app */;
@@ -195,6 +204,9 @@
 			);
 			mainGroup = 42A41F7A300FB5A700A17450;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				BC0DE70000000000000000A1 /* XCLocalSwiftPackageReference "Packages/BudgetCore" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 42A41F84300FB5A700A17450 /* Products */;
 			projectDirPath = "";
@@ -615,6 +627,24 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		BC0DE70000000000000000A1 /* XCLocalSwiftPackageReference "Packages/BudgetCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/BudgetCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		BC0DE70000000000000000A2 /* BudgetModels */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BudgetModels;
+		};
+		BC0DE70000000000000000A3 /* BudgetKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BudgetKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 42A41F7B300FB5A700A17450 /* Project object */;
 }

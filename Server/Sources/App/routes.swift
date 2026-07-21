@@ -1,0 +1,11 @@
+import Vapor
+
+/// Root route registration. Feature route groups are added under `/v1` in
+/// their own files (auth, household, plaid, accounts, transactions, budgets,
+/// bills, goals, reports) as each phase lands.
+func routes(_ app: Application) throws {
+    app.get { _ in "Budget API" }
+
+    let v1 = app.grouped("v1")
+    try registerHealthRoutes(v1)
+}

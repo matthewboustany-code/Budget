@@ -1,0 +1,26 @@
+# Secrets — never commit API keys (Plaid, Apple) or session signing keys.
+.env
+.env.*
+!Server/.env.example
+
+# SQLite databases and WAL sidecars
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+
+# macOS
+.DS_Store
+
+# Server runtime
+Server/logs/
