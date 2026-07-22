@@ -1,0 +1,20 @@
+# Keep the Docker build context (repo root) lean — the image needs only
+# Server/{Package.*,Sources,Tests} and Packages/.
+.git
+.build
+**/.build
+**/.swiftpm
+Budget/
+Budget.xcodeproj/
+BudgetTests/
+BudgetUITests/
+DerivedData
+docs/
+scripts/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+Server/.env
+Server/data
+Server/logs
+.DS_Store

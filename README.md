@@ -113,7 +113,27 @@ Built in incremental, independently-runnable phases (see
   search, pagination) and detail (recategorize, note, review, privacy); Honeydue
   comments + emoji reactions. 13 server tests; verified live (50 sandbox
   transactions auto-categorized).
-- ⬜ P4 — Monarch-style monthly budgets
-- ⬜ P5 — Bills/recurring + goals
-- ⬜ P6 — Dashboard & reports
-- ⬜ P7 — Hardening, TLS, Docker deploy
+- ✅ **P4 — Monarch-style monthly budgets.** Per-category monthly limits with
+  optional rollover; budget-vs-actual rollups computed by shared `BudgetKit`
+  math scoped to caller-visible transactions; category CRUD (delete = archive);
+  Budget tab with month switcher and set-budget sheet.
+- ✅ **P5 — Bills/recurring + goals.** Conservative recurring detection
+  (re-run after every sync; the user's off-switch is sticky) with projected
+  upcoming bills and overdue marking; shared savings goals with an attributed
+  contribution ledger; `bill-reminder` command. Privacy holds throughout:
+  private accounts hide their series, private transactions never feed
+  detection.
+- ✅ **P6 — Dashboard & reports.** Monarch-style home (net-worth sparkline,
+  month cash flow, budget bar, due-soon bills) and Swift Charts reports
+  (income-vs-spending trend, spending by category, net worth over time) —
+  server-computed, transfers excluded.
+- ✅ **P7 — Hardening & deploy.** Production fail-fast on placeholder secrets,
+  Plaid webhook signature verification (ES256 + body digest), multi-stage
+  Dockerfile + compose with Caddy auto-TLS, nightly sync + WAL-safe backup
+  scripts. 35 server + 23 package tests.
+
+## Deploying
+
+See [`Server/DEPLOY.md`](Server/DEPLOY.md) — one Docker host, `docker compose
+up -d --build`, Caddy terminates TLS for `BUDGET_DOMAIN`, cron runs the nightly
+sync and backups.

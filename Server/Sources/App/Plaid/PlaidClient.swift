@@ -83,6 +83,32 @@ struct PlaidClient: Sendable {
             clientId: clientId, secret: secret, institutionId: institutionId, initialProducts: products))
     }
 
+    /// Webhook verification: fetch the JWK for a key id. Returned as the raw
+    /// response JSON (`{"key": {...JWK...}}`) so the verifier can hand the JWK
+    /// straight to JWTKit without this client knowing about JWT types.
+    func webhookVerificationKey(keyID: String) async throws -> Data {
+        struct KeyRequest: Encodable {
+            let clientId: String
+            let secret: String
+            let keyId: String
+        }
+        guard let url = URL(string: baseURL + "/webhook_verification_key/get") else {
+            throw PlaidError.badURL
+        }
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let body = try encoder.encode(KeyRequest(clientId: clientId, secret: secret, keyId: keyID))
+        let (data, status) = try await transport.post(url: url, json: body)
+        guard (200..<300).contains(status) else {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let err = try? decoder.decode(PlaidErrorResponse.self, from: data)
+            throw PlaidError.api(status: status, code: err?.errorCode,
+                                 message: err?.errorMessage ?? "Plaid error \(status)")
+        }
+        return data
+    }
+
     // MARK: - Core
 
     private func call<Req: Encodable, Res: Decodable>(_ path: String, _ body: Req) async throws -> Res {

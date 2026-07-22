@@ -67,6 +67,15 @@ visibility, optional `splits`, `comments`, `reactions`), `CategoryGroup`/
 `NetWorthSnapshot`s. Plaid `access_token`s live only in `plaid_items`, encrypted
 at rest.
 
+## Deployment
+
+One Docker host: the Vapor API (no published port) behind Caddy, which owns
+80/443 and the Let's Encrypt certificate for `BUDGET_DOMAIN`. The database is
+a single SQLite file on a mounted volume; cron runs the nightly Plaid sync and
+a WAL-safe `.backup`. Production boot refuses placeholder secrets and dev-auth
+mode, and Plaid webhooks must carry a valid `Plaid-Verification` signature.
+Details in `Server/DEPLOY.md`; the file-by-file map is `docs/code-map.md`.
+
 ## Phases
 
 See the top-level `README.md` for the P0–P7 build order. Each phase is

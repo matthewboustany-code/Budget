@@ -1,0 +1,50 @@
+# Budget server stack: the Vapor API behind Caddy, which terminates TLS with
+# an automatic Let's Encrypt certificate for ${BUDGET_DOMAIN}.
+#
+# Setup: copy .env.example to .env, fill in real secrets, set BUDGET_DOMAIN
+# to a DNS name pointing at this host, then:
+#
+#   docker compose up -d --build
+#
+# Scheduled jobs (cron calls scripts/sync-cron.sh nightly):
+#
+#   docker compose run --rm server sync-all
+#   docker compose run --rm server bill-reminder
+#
+# The API itself is never published on a host port — Caddy is the only way in.
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: Server/Dockerfile
+    image: budget-server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # The database always lives on the mounted volume in Docker, regardless
+      # of what a local-dev .env says.
+      BUDGET_DB_PATH: /data/budget.sqlite
+    volumes:
+      - "${BUDGET_DATA_DIR:-./data}:/data"
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      BUDGET_DOMAIN: "${BUDGET_DOMAIN:?set BUDGET_DOMAIN in .env}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

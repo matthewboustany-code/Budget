@@ -48,9 +48,24 @@ func registerPlaidRoutes(_ routes: RoutesBuilder) {
         return accounts
     }
 
-    // POST /v1/plaid/webhook — Plaid → server. On a transactions update, sync the
-    // item. (Signature verification is deferred to P7 hardening.)
-    routes.post("plaid", "webhook") { req async -> HTTPStatus in
+    // POST /v1/plaid/webhook — Plaid → server. The Plaid-Verification JWT is
+    // checked first (signature, freshness, exact body digest), so only Plaid
+    // can trigger a sync. Dev mode skips verification: local/sandbox tests
+    // post unsigned bodies, and the handler's only power is syncing items we
+    // already hold.
+    routes.post("plaid", "webhook") { req async throws -> HTTPStatus in
+        let rawBody = req.body.data.map { Data(buffer: $0) } ?? Data()
+        if !req.appConfig.authDevMode {
+            guard let token = req.headers.first(name: "Plaid-Verification") else {
+                throw Abort(.unauthorized, reason: "Missing Plaid-Verification header")
+            }
+            do {
+                try await PlaidWebhookVerifier(plaid: req.plaid).verify(token: token, rawBody: rawBody)
+            } catch {
+                req.logger.warning("Plaid webhook rejected: \(error)")
+                throw Abort(.unauthorized, reason: "Webhook verification failed")
+            }
+        }
         struct Webhook: Content { var webhook_type: String?; var item_id: String? }
         guard let hook = try? req.content.decode(Webhook.self), let itemID = hook.item_id else { return .ok }
         if let item = try? await PlaidItemStore(db: req.appDatabase.dbPool).find(plaidItemID: itemID) {

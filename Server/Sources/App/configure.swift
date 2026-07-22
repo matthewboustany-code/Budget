@@ -17,8 +17,9 @@ public func configure(_ app: Application) async throws {
     app.middleware = .init()
     app.middleware.use(ErrorMiddleware.default(environment: app.environment))
 
-    // Configuration from the environment (.env).
-    app.appConfig = AppConfig.load(app.environment)
+    // Configuration from the environment (.env). Throws in production when
+    // required secrets are missing or left at their dev placeholders.
+    app.appConfig = try AppConfig.load(app.environment)
     if app.appConfig.authDevMode {
         app.logger.warning("AUTH_DEV_MODE is ON — dev sign-in accepted. Do not use in production.")
     }
