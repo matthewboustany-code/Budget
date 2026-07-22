@@ -12,6 +12,8 @@ final class AppEnvironment {
     let authStore: AuthStore
     let householdStore: HouseholdStore
     let accountStore: AccountStore
+    let transactionStore: TransactionStore
+    let categoryStore: CategoryStore
 
     /// Result of the last `/health` probe, shown in Settings.
     var connectionStatus: ConnectionStatus = .unknown
@@ -27,6 +29,8 @@ final class AppEnvironment {
         self.authStore = AuthStore(api: api, session: session)
         self.householdStore = HouseholdStore(api: api, session: session)
         self.accountStore = AccountStore(api: api)
+        self.transactionStore = TransactionStore(api: api)
+        self.categoryStore = CategoryStore(api: api)
     }
 
     /// On launch, if a session token exists, refresh identity + household from
@@ -46,6 +50,7 @@ final class AppEnvironment {
         isBootstrapping = false
         if session.household != nil {
             await accountStore.load()
+            await categoryStore.load()
         }
     }
 

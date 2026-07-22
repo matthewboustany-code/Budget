@@ -12,4 +12,6 @@ func routes(_ app: Application) throws {
     registerHouseholdRoutes(v1)
     registerPlaidRoutes(v1)
     registerAccountRoutes(v1)
+    registerCategoryRoutes(v1)
+    registerTransactionRoutes(v1)
 }

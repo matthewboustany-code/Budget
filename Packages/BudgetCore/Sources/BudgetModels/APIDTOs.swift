@@ -186,6 +186,32 @@ public struct SandboxLinkRequest: Codable, Sendable {
     }
 }
 
+// MARK: - Categories
+
+/// The household's category tree (groups + their categories).
+public struct CategoriesResponse: Codable, Sendable {
+    public var groups: [CategoryGroup]
+    public var categories: [BudgetCategory]
+    public init(groups: [CategoryGroup], categories: [BudgetCategory]) {
+        self.groups = groups
+        self.categories = categories
+    }
+}
+
+// MARK: - Transaction detail (couples layer)
+
+/// A transaction plus its comment thread and reactions, for the detail screen.
+public struct TransactionDetailResponse: Codable, Sendable {
+    public var transaction: Transaction
+    public var comments: [TransactionComment]
+    public var reactions: [TransactionReaction]
+    public init(transaction: Transaction, comments: [TransactionComment], reactions: [TransactionReaction]) {
+        self.transaction = transaction
+        self.comments = comments
+        self.reactions = reactions
+    }
+}
+
 // MARK: - Budgets
 
 /// Upsert a category's budget for a month (used by `PUT /v1/budgets/:categoryID`).

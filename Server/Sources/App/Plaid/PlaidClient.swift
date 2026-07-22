@@ -70,6 +70,11 @@ struct PlaidClient: Sendable {
             clientId: clientId, secret: secret, accessToken: accessToken))
     }
 
+    func transactionsSync(accessToken: String, cursor: String?) async throws -> PlaidTransactionsSyncResponse {
+        try await call("/transactions/sync", PlaidTransactionsSyncRequest(
+            clientId: clientId, secret: secret, accessToken: accessToken, cursor: cursor, count: 500))
+    }
+
     /// Sandbox-only: mint a public token for a test institution without the
     /// Link UI. Used by the dev "link sandbox account" path and tests.
     func sandboxCreatePublicToken(institutionId: String,

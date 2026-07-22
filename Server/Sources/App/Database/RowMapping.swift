@@ -51,6 +51,84 @@ extension Account {
     }
 }
 
+extension Transaction {
+    init(row: Row) {
+        let splitsJSON: String? = row["splits_json"]
+        let splits: [TransactionSplit] = splitsJSON
+            .flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode([TransactionSplit].self, from: $0) } ?? []
+        self.init(
+            id: DBFormat.uuid(row["id"]) ?? UUID(),
+            householdID: DBFormat.uuid(row["household_id"]) ?? UUID(),
+            accountID: DBFormat.uuid(row["account_id"]) ?? UUID(),
+            ownerMemberID: DBFormat.uuid(row["owner_member_id"]) ?? UUID(),
+            amount: DBFormat.money(row["amount"]),
+            date: DBFormat.date(row["date"]) ?? Date(),
+            name: row["name"],
+            merchantName: row["merchant_name"],
+            categoryID: DBFormat.uuid(row["category_id"]),
+            status: TransactionStatus(rawValue: row["status"]) ?? .posted,
+            note: row["note"],
+            isReviewed: DBFormat.bool(row["is_reviewed"]),
+            visibility: Visibility(rawValue: row["visibility"]) ?? .shared,
+            splits: splits,
+            plaidTransactionID: row["plaid_transaction_id"],
+            createdAt: DBFormat.date(row["created_at"]) ?? Date()
+        )
+    }
+}
+
+extension CategoryGroup {
+    init(row: Row) {
+        self.init(
+            id: DBFormat.uuid(row["id"]) ?? UUID(),
+            householdID: DBFormat.uuid(row["household_id"]) ?? UUID(),
+            name: row["name"],
+            isIncome: DBFormat.bool(row["is_income"]),
+            sortOrder: row["sort_order"] ?? 0
+        )
+    }
+}
+
+extension BudgetCategory {
+    init(row: Row) {
+        self.init(
+            id: DBFormat.uuid(row["id"]) ?? UUID(),
+            householdID: DBFormat.uuid(row["household_id"]) ?? UUID(),
+            groupID: DBFormat.uuid(row["group_id"]) ?? UUID(),
+            name: row["name"],
+            icon: row["icon"],
+            colorHex: row["color_hex"],
+            sortOrder: row["sort_order"] ?? 0,
+            isArchived: DBFormat.bool(row["is_archived"])
+        )
+    }
+}
+
+extension TransactionComment {
+    init(row: Row) {
+        self.init(
+            id: DBFormat.uuid(row["id"]) ?? UUID(),
+            transactionID: DBFormat.uuid(row["transaction_id"]) ?? UUID(),
+            memberID: DBFormat.uuid(row["member_id"]) ?? UUID(),
+            body: row["body"],
+            createdAt: DBFormat.date(row["created_at"]) ?? Date()
+        )
+    }
+}
+
+extension TransactionReaction {
+    init(row: Row) {
+        self.init(
+            id: DBFormat.uuid(row["id"]) ?? UUID(),
+            transactionID: DBFormat.uuid(row["transaction_id"]) ?? UUID(),
+            memberID: DBFormat.uuid(row["member_id"]) ?? UUID(),
+            emoji: row["emoji"],
+            createdAt: DBFormat.date(row["created_at"]) ?? Date()
+        )
+    }
+}
+
 extension HouseholdMember {
     init(row: Row) {
         self.init(

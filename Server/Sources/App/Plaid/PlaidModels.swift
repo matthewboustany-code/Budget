@@ -29,6 +29,14 @@ struct PlaidAccessTokenRequest: Encodable {
     let accessToken: String
 }
 
+struct PlaidTransactionsSyncRequest: Encodable {
+    let clientId: String
+    let secret: String
+    let accessToken: String
+    let cursor: String?
+    let count: Int
+}
+
 struct PlaidSandboxPublicTokenRequest: Encodable {
     let clientId: String
     let secret: String
@@ -75,6 +83,35 @@ struct PlaidBalances: Decodable {
     let current: Double?
     let available: Double?
     let isoCurrencyCode: String?
+}
+
+struct PlaidTransactionsSyncResponse: Decodable {
+    let added: [PlaidTransaction]
+    let modified: [PlaidTransaction]
+    let removed: [PlaidRemovedTransaction]
+    let nextCursor: String
+    let hasMore: Bool
+}
+
+struct PlaidRemovedTransaction: Decodable {
+    let transactionId: String
+}
+
+struct PlaidTransaction: Decodable {
+    let transactionId: String
+    let accountId: String
+    let amount: Double
+    let isoCurrencyCode: String?
+    let date: String                       // "YYYY-MM-DD"
+    let name: String
+    let merchantName: String?
+    let pending: Bool
+    let personalFinanceCategory: PlaidPFC?
+}
+
+struct PlaidPFC: Decodable {
+    let primary: String?
+    let detailed: String?
 }
 
 /// Plaid's error envelope (returned with a non-2xx status).

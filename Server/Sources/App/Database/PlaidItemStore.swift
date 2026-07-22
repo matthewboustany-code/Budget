@@ -57,6 +57,20 @@ struct PlaidItemStore {
         }
     }
 
+    func forHousehold(_ householdID: UUID) async throws -> [PlaidItemRecord] {
+        try await db.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM plaid_items WHERE household_id = ?",
+                             arguments: [householdID.uuidString]).map(PlaidItemRecord.init(row:))
+        }
+    }
+
+    func find(plaidItemID: String) async throws -> PlaidItemRecord? {
+        try await db.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM plaid_items WHERE plaid_item_id = ?",
+                             arguments: [plaidItemID]).map(PlaidItemRecord.init(row:))
+        }
+    }
+
     func updateCursor(id: UUID, cursor: String) async throws {
         try await db.write { db in
             try db.execute(sql: "UPDATE plaid_items SET transactions_cursor = ? WHERE id = ?",

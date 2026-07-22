@@ -11,18 +11,19 @@ struct SyncAllItemsCommand: AsyncCommand {
     func run(using context: CommandContext, signature: Signature) async throws {
         let app = context.application
         let items = try await PlaidItemStore(db: app.appDatabase.dbPool).all()
-        let service = AccountSyncService(
-            db: app.appDatabase.dbPool, plaid: app.plaid,
-            cipher: TokenCipher(secret: app.appConfig.plaidTokenEncKey))
+        let cipher = TokenCipher(secret: app.appConfig.plaidTokenEncKey)
+        let accountSync = AccountSyncService(db: app.appDatabase.dbPool, plaid: app.plaid, cipher: cipher)
+        let transactionSync = TransactionSyncService(db: app.appDatabase.dbPool, plaid: app.plaid, cipher: cipher)
 
         for item in items {
             do {
-                try await service.refreshBalances(item: item)
+                try await accountSync.refreshBalances(item: item)
+                try await transactionSync.sync(item: item)
             } catch {
-                app.logger.error("Balance sync failed for item \(item.plaidItemID): \(error)")
+                app.logger.error("Sync failed for item \(item.plaidItemID): \(error)")
             }
         }
-        app.logger.info("Refreshed \(items.count) Plaid item(s)")
+        app.logger.info("Synced \(items.count) Plaid item(s)")
         try await NetWorthSnapshotCommand.snapshotAll(app)
     }
 }

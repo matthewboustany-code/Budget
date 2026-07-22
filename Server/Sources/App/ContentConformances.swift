@@ -20,3 +20,16 @@ extension ExchangePublicTokenRequest: @retroactive Content {}
 extension SandboxLinkRequest: @retroactive Content {}
 extension UpdateAccountRequest: @retroactive Content {}
 extension NetWorthResponse: @retroactive Content {}
+
+// Transactions, categories & couples layer (P3)
+extension Transaction: @retroactive Content {}
+extension TransactionPage: @retroactive Content {}
+extension TransactionDetailResponse: @retroactive Content {}
+extension UpdateTransactionRequest: @retroactive Content {}
+extension BudgetCategory: @retroactive Content {}
+extension CategoryGroup: @retroactive Content {}
+extension CategoriesResponse: @retroactive Content {}
+extension TransactionComment: @retroactive Content {}
+extension TransactionReaction: @retroactive Content {}
+extension AddCommentRequest: @retroactive Content {}
+extension AddReactionRequest: @retroactive Content {}

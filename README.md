@@ -107,7 +107,12 @@ Built in incremental, independently-runnable phases (see
   dev sandbox-link path for testing; nightly balance + net-worth snapshot
   commands. 9 server tests (incl. privacy enforcement); verified live against
   Plaid sandbox (12 real accounts).
-- ⬜ P3 — Transactions (+ couples chat/reactions)
+- ✅ **P3 — Transactions & couples layer.** Plaid `/transactions/sync` (+ webhook
+  and initial pull on link); default category tree seeded per household with
+  auto-categorization from Plaid's categories; transactions list (grouped by day,
+  search, pagination) and detail (recategorize, note, review, privacy); Honeydue
+  comments + emoji reactions. 13 server tests; verified live (50 sandbox
+  transactions auto-categorized).
 - ⬜ P4 — Monarch-style monthly budgets
 - ⬜ P5 — Bills/recurring + goals
 - ⬜ P6 — Dashboard & reports

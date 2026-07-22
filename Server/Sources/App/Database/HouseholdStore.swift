@@ -55,6 +55,7 @@ struct HouseholdStore {
             try db.execute(sql: "INSERT INTO households (id, name, created_at) VALUES (?, ?, ?)",
                            arguments: [household.id.uuidString, household.name, DBFormat.string(household.createdAt)])
             try Self.insertMember(member, db)
+            try CategorySeeder.seed(householdID: household.id, db)   // default category tree
         }
         return (household, member)
     }
