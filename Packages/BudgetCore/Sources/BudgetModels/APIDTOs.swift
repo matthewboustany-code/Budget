@@ -274,6 +274,101 @@ public struct UpdateCategoryRequest: Codable, Sendable {
     }
 }
 
+// MARK: - Recurring & bills
+
+/// Partial update to a recurring series. Only non-nil fields are applied;
+/// `clearCategory` distinguishes "leave as-is" from "set to uncategorized".
+/// Setting `isActive: false` is how the user says "this isn't a bill" — the
+/// detector never flips it back.
+public struct UpdateRecurringRequest: Codable, Sendable {
+    public var name: String?
+    public var categoryID: UUID?
+    public var clearCategory: Bool?
+    public var isActive: Bool?
+    public init(name: String? = nil, categoryID: UUID? = nil,
+                clearCategory: Bool? = nil, isActive: Bool? = nil) {
+        self.name = name
+        self.categoryID = categoryID
+        self.clearCategory = clearCategory
+        self.isActive = isActive
+    }
+}
+
+/// The `GET /v1/bills/upcoming` payload: occurrences projected from the
+/// caller's visible active series over `[from, to]`. Never stored — see
+/// `BillProjector`.
+public struct UpcomingBillsResponse: Codable, Sendable {
+    public var from: Date
+    public var to: Date
+    public var bills: [Bill]
+    public init(from: Date, to: Date, bills: [Bill]) {
+        self.from = from
+        self.to = to
+        self.bills = bills
+    }
+}
+
+// MARK: - Goals
+
+public struct CreateGoalRequest: Codable, Sendable {
+    public var name: String
+    public var targetAmount: Money
+    public var targetDate: Date?
+    public var icon: String?
+    public var colorHex: String?
+    public init(name: String, targetAmount: Money, targetDate: Date? = nil,
+                icon: String? = nil, colorHex: String? = nil) {
+        self.name = name
+        self.targetAmount = targetAmount
+        self.targetDate = targetDate
+        self.icon = icon
+        self.colorHex = colorHex
+    }
+}
+
+/// Partial update to a goal. Only non-nil fields are applied; `clearTargetDate`
+/// distinguishes "leave as-is" from "remove the deadline".
+public struct UpdateGoalRequest: Codable, Sendable {
+    public var name: String?
+    public var targetAmount: Money?
+    public var targetDate: Date?
+    public var clearTargetDate: Bool?
+    public var icon: String?
+    public var colorHex: String?
+    public init(name: String? = nil, targetAmount: Money? = nil, targetDate: Date? = nil,
+                clearTargetDate: Bool? = nil, icon: String? = nil, colorHex: String? = nil) {
+        self.name = name
+        self.targetAmount = targetAmount
+        self.targetDate = targetDate
+        self.clearTargetDate = clearTargetDate
+        self.icon = icon
+        self.colorHex = colorHex
+    }
+}
+
+/// Add money to (positive) or withdraw from (negative) a goal. `date` defaults
+/// to now server-side.
+public struct AddContributionRequest: Codable, Sendable {
+    public var amount: Money
+    public var date: Date?
+    public var note: String?
+    public init(amount: Money, date: Date? = nil, note: String? = nil) {
+        self.amount = amount
+        self.date = date
+        self.note = note
+    }
+}
+
+/// A goal plus its contribution history, for the detail screen.
+public struct GoalDetailResponse: Codable, Sendable {
+    public var goal: Goal
+    public var contributions: [GoalContribution]
+    public init(goal: Goal, contributions: [GoalContribution]) {
+        self.goal = goal
+        self.contributions = contributions
+    }
+}
+
 // MARK: - Errors
 
 /// Uniform error body the server returns and the app decodes for messaging.

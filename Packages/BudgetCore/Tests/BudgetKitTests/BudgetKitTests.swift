@@ -179,4 +179,71 @@ struct RecurringDetectorTests {
                                               calendar: utc, now: date(2026, 7, 1))
         #expect(series.isEmpty)
     }
+
+    @Test func ignoresChargeRefundPairs() {
+        let acct = UUID()
+        // Same merchant, steady biweekly rhythm, but alternating +500/−500 —
+        // a charge/refund pattern, not a subscription.
+        let txs = (0..<4).map { i in
+            tx(account: acct, category: nil, amount: i.isMultiple(of: 2) ? 500 : -500,
+               on: date(2026, 5, 1 + 14 * i), merchant: "United Airlines")
+        }
+        let series = RecurringDetector.detect(transactions: txs, householdID: household,
+                                              calendar: utc, now: date(2026, 7, 1))
+        #expect(series.isEmpty)
+    }
+}
+
+@Suite("Bill projection")
+struct BillProjectorTests {
+    private func series(name: String = "Netflix", amount: Money = Money(string: "15.99")!,
+                        cadence: RecurringCadence = .monthly, next: Date?,
+                        isActive: Bool = true) -> RecurringSeries {
+        RecurringSeries(id: UUID(), householdID: household, name: name,
+                        averageAmount: amount, cadence: cadence,
+                        nextDate: next, isActive: isActive)
+    }
+
+    @Test func projectsMonthlyOccurrencesInWindow() {
+        let netflix = series(next: date(2026, 7, 25))
+        let bills = BillProjector.upcomingBills(series: [netflix],
+                                                from: date(2026, 7, 22), to: date(2026, 9, 30),
+                                                now: date(2026, 7, 22), calendar: utc)
+        // July 25, Aug 25, Sep 25 — monthly stepping stays on the 25th.
+        #expect(bills.count == 3)
+        #expect(bills.map(\.dueDate) == [date(2026, 7, 25), date(2026, 8, 25), date(2026, 9, 25)])
+        #expect(bills.allSatisfy { $0.status == .upcoming })
+        #expect(bills.allSatisfy { $0.recurringSeriesID == netflix.id })
+    }
+
+    @Test func pastDueOccurrenceIsOverdue() {
+        let rent = series(name: "Rent", amount: 2000, next: date(2026, 7, 18))
+        let bills = BillProjector.upcomingBills(series: [rent],
+                                                from: date(2026, 7, 15), to: date(2026, 7, 31),
+                                                now: date(2026, 7, 22), calendar: utc)
+        #expect(bills.count == 1)
+        #expect(bills.first?.status == .overdue)
+    }
+
+    @Test func skipsInactiveIncomeAndIrregularSeries() {
+        let all = [
+            series(name: "Cancelled", next: date(2026, 7, 25), isActive: false),
+            series(name: "Paycheck", amount: -3000, cadence: .biweekly, next: date(2026, 7, 24)),
+            series(name: "Odd", cadence: .irregular, next: date(2026, 7, 24)),
+            series(name: "No date", next: nil),
+        ]
+        let bills = BillProjector.upcomingBills(series: all,
+                                                from: date(2026, 7, 22), to: date(2026, 8, 22),
+                                                now: date(2026, 7, 22), calendar: utc)
+        #expect(bills.isEmpty)
+    }
+
+    @Test func sortsAcrossSeriesByDueDate() {
+        let bills = BillProjector.upcomingBills(
+            series: [series(name: "Late", next: date(2026, 8, 9)),
+                     series(name: "Soon", cadence: .weekly, next: date(2026, 7, 23))],
+            from: date(2026, 7, 22), to: date(2026, 8, 10),
+            now: date(2026, 7, 22), calendar: utc)
+        #expect(bills.map(\.name) == ["Soon", "Soon", "Soon", "Late"])
+    }
 }

@@ -52,6 +52,9 @@ struct TransactionSyncService {
         if let cursor {
             try await PlaidItemStore(db: db).updateCursor(id: item.id, cursor: cursor)
         }
+
+        // Fresh transactions can reveal (or advance) recurring series.
+        try await RecurringService(db: db).refresh(householdID: item.householdID)
     }
 
     static func map(_ pt: PlaidTransaction, account: Account, categoryIDByName: [String: UUID]) -> Transaction {

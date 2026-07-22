@@ -28,8 +28,12 @@ public enum RecurringDetector {
 
             let amounts = sorted.map { $0.amount }
             let avg = amounts.reduce(Money(0), +) / Money(amounts.count)
-            // Reject series whose amounts swing wildly (not a stable subscription).
-            guard amountsAreStable(amounts) else { return nil }
+            // Reject series whose amounts swing wildly (not a stable
+            // subscription) or mix inflows and outflows (a charge/refund
+            // pattern — Plaid's sandbox "United Airlines" +500/−500 pair
+            // averages to a nonsense $0 bill).
+            guard amountsAreStable(amounts), avg != 0,
+                  amounts.allSatisfy({ ($0 > 0) == (avg > 0) }) else { return nil }
 
             let last = sorted.last!.date
             let next = calendar.date(byAdding: .day, value: cadence.approximateDays, to: last)
@@ -50,8 +54,10 @@ public enum RecurringDetector {
     }
 
     /// Lowercase, strip trailing digits/store numbers and punctuation so
-    /// "NETFLIX #123" and "Netflix" collapse to one merchant.
-    static func normalize(_ raw: String) -> String {
+    /// "NETFLIX #123" and "Netflix" collapse to one merchant. Public because
+    /// it is also the stable key the server uses to match freshly detected
+    /// series against stored ones across refreshes.
+    public static func normalize(_ raw: String) -> String {
         let lowered = raw.lowercased()
         let stripped = lowered.unicodeScalars.filter {
             CharacterSet.letters.contains($0) || $0 == " "

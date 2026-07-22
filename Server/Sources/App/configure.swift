@@ -38,6 +38,7 @@ public func configure(_ app: Application) async throws {
     // Scheduled jobs, run by cron (see scripts/). Never HTTP-triggered.
     app.asyncCommands.use(SyncAllItemsCommand(), as: "sync-all")
     app.asyncCommands.use(NetWorthSnapshotCommand(), as: "networth-snapshot")
+    app.asyncCommands.use(BillReminderCommand(), as: "bill-reminder")
 
     try routes(app)
 }

@@ -40,3 +40,13 @@ extension SetBudgetRequest: @retroactive Content {}
 extension BudgetMonthResponse: @retroactive Content {}
 extension CreateCategoryRequest: @retroactive Content {}
 extension UpdateCategoryRequest: @retroactive Content {}
+
+// Bills, recurring & goals (P5)
+extension RecurringSeries: @retroactive Content {}
+extension UpdateRecurringRequest: @retroactive Content {}
+extension UpcomingBillsResponse: @retroactive Content {}
+extension Goal: @retroactive Content {}
+extension CreateGoalRequest: @retroactive Content {}
+extension UpdateGoalRequest: @retroactive Content {}
+extension AddContributionRequest: @retroactive Content {}
+extension GoalDetailResponse: @retroactive Content {}

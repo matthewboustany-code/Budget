@@ -142,6 +142,52 @@ extension TransactionReaction {
     }
 }
 
+extension RecurringSeries {
+    init(row: Row) {
+        self.init(
+            id: DBFormat.uuid(row["id"]) ?? UUID(),
+            householdID: DBFormat.uuid(row["household_id"]) ?? UUID(),
+            name: row["name"],
+            categoryID: DBFormat.uuid(row["category_id"]),
+            averageAmount: DBFormat.money(row["average_amount"]),
+            cadence: RecurringCadence(rawValue: row["cadence"]) ?? .irregular,
+            accountID: DBFormat.uuid(row["account_id"]),
+            lastDate: DBFormat.date(row["last_date"]),
+            nextDate: DBFormat.date(row["next_date"]),
+            isActive: DBFormat.bool(row["is_active"])
+        )
+    }
+}
+
+extension Goal {
+    init(row: Row) {
+        self.init(
+            id: DBFormat.uuid(row["id"]) ?? UUID(),
+            householdID: DBFormat.uuid(row["household_id"]) ?? UUID(),
+            name: row["name"],
+            targetAmount: DBFormat.money(row["target_amount"]),
+            currentAmount: DBFormat.money(row["current_amount"]),
+            targetDate: DBFormat.date(row["target_date"]),
+            icon: row["icon"],
+            colorHex: row["color_hex"],
+            createdAt: DBFormat.date(row["created_at"]) ?? Date()
+        )
+    }
+}
+
+extension GoalContribution {
+    init(row: Row) {
+        self.init(
+            id: DBFormat.uuid(row["id"]) ?? UUID(),
+            goalID: DBFormat.uuid(row["goal_id"]) ?? UUID(),
+            amount: DBFormat.money(row["amount"]),
+            date: DBFormat.date(row["date"]) ?? Date(),
+            memberID: DBFormat.uuid(row["member_id"]),
+            note: row["note"]
+        )
+    }
+}
+
 extension HouseholdMember {
     init(row: Row) {
         self.init(

@@ -15,6 +15,8 @@ final class AppEnvironment {
     let transactionStore: TransactionStore
     let categoryStore: CategoryStore
     let budgetStore: BudgetStore
+    let billsStore: BillsStore
+    let goalsStore: GoalsStore
 
     /// Result of the last `/health` probe, shown in Settings.
     var connectionStatus: ConnectionStatus = .unknown
@@ -33,6 +35,8 @@ final class AppEnvironment {
         self.transactionStore = TransactionStore(api: api)
         self.categoryStore = CategoryStore(api: api)
         self.budgetStore = BudgetStore(api: api)
+        self.billsStore = BillsStore(api: api)
+        self.goalsStore = GoalsStore(api: api)
     }
 
     /// On launch, if a session token exists, refresh identity + household from
