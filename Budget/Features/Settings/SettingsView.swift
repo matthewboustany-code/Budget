@@ -57,6 +57,38 @@ struct SettingsView: View {
     }
 }
 
+/// Health-check status line (previously lived on the P0 dashboard; the
+/// Monarch-style home has no backend plumbing, so it moved here for good).
+struct ConnectionRow: View {
+    let status: AppEnvironment.ConnectionStatus
+
+    var body: some View {
+        HStack {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+            Text(status.label)
+                .font(.callout)
+        }
+    }
+
+    private var symbol: String {
+        switch status {
+        case .ok: return "checkmark.circle.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .checking: return "arrow.triangle.2.circlepath"
+        case .unknown: return "questionmark.circle"
+        }
+    }
+
+    private var tint: Color {
+        switch status {
+        case .ok: return .green
+        case .failed: return .orange
+        default: return .secondary
+        }
+    }
+}
+
 private struct MemberRow: View {
     let member: HouseholdMember
     let isMe: Bool

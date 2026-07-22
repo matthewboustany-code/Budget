@@ -50,3 +50,7 @@ extension CreateGoalRequest: @retroactive Content {}
 extension UpdateGoalRequest: @retroactive Content {}
 extension AddContributionRequest: @retroactive Content {}
 extension GoalDetailResponse: @retroactive Content {}
+
+// Reports (P6)
+extension CashFlowReportResponse: @retroactive Content {}
+extension SpendingReportResponse: @retroactive Content {}

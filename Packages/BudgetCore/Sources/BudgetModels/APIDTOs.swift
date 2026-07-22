@@ -369,6 +369,33 @@ public struct GoalDetailResponse: Codable, Sendable {
     }
 }
 
+// MARK: - Reports
+
+/// The `GET /v1/reports/cashflow` payload: one summary per month, oldest
+/// first, ending at the current month. Transactions in the household's
+/// "Transfer" category are excluded — moving money between your own accounts
+/// is neither income nor spending.
+public struct CashFlowReportResponse: Codable, Sendable {
+    public var months: [CashFlowSummary]
+    public init(months: [CashFlowSummary]) {
+        self.months = months
+    }
+}
+
+/// The `GET /v1/reports/spending?month=` payload: per-category outflows,
+/// highest first, with budgets attached for comparison. Transfers excluded,
+/// same as cash flow.
+public struct SpendingReportResponse: Codable, Sendable {
+    public var month: Month
+    public var entries: [SpendingByCategory]
+    public var total: Money
+    public init(month: Month, entries: [SpendingByCategory], total: Money) {
+        self.month = month
+        self.entries = entries
+        self.total = total
+    }
+}
+
 // MARK: - Errors
 
 /// Uniform error body the server returns and the app decodes for messaging.
