@@ -33,3 +33,10 @@ extension TransactionComment: @retroactive Content {}
 extension TransactionReaction: @retroactive Content {}
 extension AddCommentRequest: @retroactive Content {}
 extension AddReactionRequest: @retroactive Content {}
+
+// Budgets & category CRUD (P4)
+extension Budget: @retroactive Content {}
+extension SetBudgetRequest: @retroactive Content {}
+extension BudgetMonthResponse: @retroactive Content {}
+extension CreateCategoryRequest: @retroactive Content {}
+extension UpdateCategoryRequest: @retroactive Content {}

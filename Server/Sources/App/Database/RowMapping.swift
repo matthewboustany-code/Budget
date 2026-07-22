@@ -105,6 +105,19 @@ extension BudgetCategory {
     }
 }
 
+extension Budget {
+    init(row: Row) {
+        self.init(
+            id: DBFormat.uuid(row["id"]) ?? UUID(),
+            householdID: DBFormat.uuid(row["household_id"]) ?? UUID(),
+            categoryID: DBFormat.uuid(row["category_id"]) ?? UUID(),
+            month: Month(row["month"]) ?? Month(year: 1970, month: 1),
+            amount: DBFormat.money(row["amount"]),
+            rolloverEnabled: DBFormat.bool(row["rollover_enabled"])
+        )
+    }
+}
+
 extension TransactionComment {
     init(row: Row) {
         self.init(

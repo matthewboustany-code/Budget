@@ -52,6 +52,22 @@ struct TransactionStore {
         return TransactionPage(transactions: transactions, nextCursor: nextCursor)
     }
 
+    /// Every transaction visible to the member, unpaginated — input to the
+    /// budget rollup, which needs prior months for rollover. Same visibility
+    /// rule as `list` (a private account hides all its transactions).
+    func allVisible(householdID: UUID, memberID: UUID) async throws -> [Transaction] {
+        try await db.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT t.* FROM transactions t
+                JOIN accounts a ON a.id = t.account_id
+                WHERE t.household_id = ?
+                  AND (a.visibility = 'shared' OR a.owner_member_id = ?)
+                  AND (t.visibility = 'shared' OR t.owner_member_id = ?)
+                """, arguments: [householdID.uuidString, memberID.uuidString, memberID.uuidString])
+                .map(Transaction.init(row:))
+        }
+    }
+
     func get(id: UUID) async throws -> Transaction? {
         try await db.read { db in
             try Row.fetchOne(db, sql: "SELECT * FROM transactions WHERE id = ?", arguments: [id.uuidString])

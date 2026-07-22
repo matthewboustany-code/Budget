@@ -226,6 +226,54 @@ public struct SetBudgetRequest: Codable, Sendable {
     }
 }
 
+/// The `GET /v1/budgets?month=` payload: the month's stored budgets (source of
+/// truth for the editor — amount + rollover flag) plus the computed
+/// budget-vs-actual rollup. Spent totals reflect only transactions visible to
+/// the requesting member, so partners may see different numbers for a category
+/// that has private activity — consistent with every other route.
+public struct BudgetMonthResponse: Codable, Sendable {
+    public var month: Month
+    public var budgets: [Budget]
+    public var rollup: MonthBudget
+    public init(month: Month, budgets: [Budget], rollup: MonthBudget) {
+        self.month = month
+        self.budgets = budgets
+        self.rollup = rollup
+    }
+}
+
+// MARK: - Category CRUD
+
+public struct CreateCategoryRequest: Codable, Sendable {
+    public var groupID: UUID
+    public var name: String
+    public var icon: String?
+    public var colorHex: String?
+    public init(groupID: UUID, name: String, icon: String? = nil, colorHex: String? = nil) {
+        self.groupID = groupID
+        self.name = name
+        self.icon = icon
+        self.colorHex = colorHex
+    }
+}
+
+/// Partial update to a category. Only non-nil fields are applied.
+public struct UpdateCategoryRequest: Codable, Sendable {
+    public var name: String?
+    public var icon: String?
+    public var colorHex: String?
+    public var sortOrder: Int?
+    public var isArchived: Bool?
+    public init(name: String? = nil, icon: String? = nil, colorHex: String? = nil,
+                sortOrder: Int? = nil, isArchived: Bool? = nil) {
+        self.name = name
+        self.icon = icon
+        self.colorHex = colorHex
+        self.sortOrder = sortOrder
+        self.isArchived = isArchived
+    }
+}
+
 // MARK: - Errors
 
 /// Uniform error body the server returns and the app decodes for messaging.

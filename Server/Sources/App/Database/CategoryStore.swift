@@ -18,6 +18,66 @@ struct CategoryStore {
             return CategoriesResponse(groups: groups, categories: categories)
         }
     }
+
+    func get(id: UUID) async throws -> BudgetCategory? {
+        try await db.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM categories WHERE id = ?", arguments: [id.uuidString])
+                .map(BudgetCategory.init(row:))
+        }
+    }
+
+    func getGroup(id: UUID) async throws -> CategoryGroup? {
+        try await db.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM category_groups WHERE id = ?", arguments: [id.uuidString])
+                .map(CategoryGroup.init(row:))
+        }
+    }
+
+    /// Creates a custom category at the end of its group.
+    func create(householdID: UUID, groupID: UUID, name: String,
+                icon: String?, colorHex: String?) async throws -> BudgetCategory {
+        try await db.write { db in
+            let maxSort = try Int.fetchOne(db, sql: "SELECT MAX(sort_order) FROM categories WHERE group_id = ?",
+                                           arguments: [groupID.uuidString]) ?? 0
+            let category = BudgetCategory(id: UUID(), householdID: householdID, groupID: groupID,
+                                          name: name, icon: icon, colorHex: colorHex,
+                                          sortOrder: maxSort + 1)
+            try db.execute(sql: """
+                INSERT INTO categories (id, household_id, group_id, name, icon, color_hex, sort_order, is_archived)
+                VALUES (?,?,?,?,?,?,?,0)
+                """, arguments: [category.id.uuidString, householdID.uuidString, groupID.uuidString,
+                                 category.name, category.icon, category.colorHex, category.sortOrder])
+            return category
+        }
+    }
+
+    /// PATCH semantics: only non-nil fields are applied.
+    func update(id: UUID, _ body: UpdateCategoryRequest) async throws {
+        try await db.write { db in
+            if let name = body.name {
+                try db.execute(sql: "UPDATE categories SET name = ? WHERE id = ?", arguments: [name, id.uuidString])
+            }
+            if let icon = body.icon {
+                try db.execute(sql: "UPDATE categories SET icon = ? WHERE id = ?", arguments: [icon, id.uuidString])
+            }
+            if let colorHex = body.colorHex {
+                try db.execute(sql: "UPDATE categories SET color_hex = ? WHERE id = ?", arguments: [colorHex, id.uuidString])
+            }
+            if let sortOrder = body.sortOrder {
+                try db.execute(sql: "UPDATE categories SET sort_order = ? WHERE id = ?", arguments: [sortOrder, id.uuidString])
+            }
+            if let isArchived = body.isArchived {
+                try db.execute(sql: "UPDATE categories SET is_archived = ? WHERE id = ?",
+                               arguments: [isArchived ? 1 : 0, id.uuidString])
+            }
+        }
+    }
+
+    /// Delete = archive. Transactions keep their `category_id` (history stays
+    /// intact); the category just disappears from lists and pickers.
+    func archive(id: UUID) async throws {
+        try await update(id: id, UpdateCategoryRequest(isArchived: true))
+    }
 }
 
 extension Request {
