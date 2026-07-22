@@ -12,3 +12,11 @@ extension MeResponse: @retroactive Content {}
 extension CreateHouseholdRequest: @retroactive Content {}
 extension JoinHouseholdRequest: @retroactive Content {}
 extension InviteResponse: @retroactive Content {}
+
+// Accounts & Plaid (P2)
+extension Account: @retroactive Content {}
+extension LinkTokenResponse: @retroactive Content {}
+extension ExchangePublicTokenRequest: @retroactive Content {}
+extension SandboxLinkRequest: @retroactive Content {}
+extension UpdateAccountRequest: @retroactive Content {}
+extension NetWorthResponse: @retroactive Content {}

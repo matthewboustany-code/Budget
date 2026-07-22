@@ -26,11 +26,18 @@ public func configure(_ app: Application) async throws {
     // Sign our session bearer tokens with the HMAC secret.
     await app.jwt.keys.add(hmac: .init(from: app.appConfig.sessionJWTSecret), digestAlgorithm: .sha256)
 
-    // Database: single SQLite file, path overridable for prod/volumes.
-    let dbPath = Environment.get("BUDGET_DB_PATH")
-        ?? app.directory.workingDirectory + "budget.sqlite"
-    app.appDatabase = try AppDatabase(path: dbPath)
-    app.logger.info("Database ready at \(dbPath)")
+    // Database: single SQLite file, path overridable for prod/volumes. Tests may
+    // inject their own database before calling configure; don't overwrite it.
+    if app.appDatabaseIfConfigured == nil {
+        let dbPath = Environment.get("BUDGET_DB_PATH")
+            ?? app.directory.workingDirectory + "budget.sqlite"
+        app.appDatabase = try AppDatabase(path: dbPath)
+        app.logger.info("Database ready at \(dbPath)")
+    }
+
+    // Scheduled jobs, run by cron (see scripts/). Never HTTP-triggered.
+    app.asyncCommands.use(SyncAllItemsCommand(), as: "sync-all")
+    app.asyncCommands.use(NetWorthSnapshotCommand(), as: "networth-snapshot")
 
     try routes(app)
 }

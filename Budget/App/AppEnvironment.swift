@@ -11,6 +11,7 @@ final class AppEnvironment {
     let api: APIClient
     let authStore: AuthStore
     let householdStore: HouseholdStore
+    let accountStore: AccountStore
 
     /// Result of the last `/health` probe, shown in Settings.
     var connectionStatus: ConnectionStatus = .unknown
@@ -25,6 +26,7 @@ final class AppEnvironment {
         self.api = api
         self.authStore = AuthStore(api: api, session: session)
         self.householdStore = HouseholdStore(api: api, session: session)
+        self.accountStore = AccountStore(api: api)
     }
 
     /// On launch, if a session token exists, refresh identity + household from
@@ -42,6 +44,9 @@ final class AppEnvironment {
         isBootstrapping = true
         await householdStore.refresh()
         isBootstrapping = false
+        if session.household != nil {
+            await accountStore.load()
+        }
     }
 
     enum ConnectionStatus: Equatable {

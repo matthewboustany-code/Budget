@@ -149,6 +149,43 @@ public struct AddReactionRequest: Codable, Sendable {
     public init(emoji: String) { self.emoji = emoji }
 }
 
+// MARK: - Accounts
+
+/// Partial update to an account (owner-only for visibility). Only non-nil
+/// fields are applied.
+public struct UpdateAccountRequest: Codable, Sendable {
+    public var name: String?
+    public var visibility: Visibility?
+    public var isHidden: Bool?
+    public init(name: String? = nil, visibility: Visibility? = nil, isHidden: Bool? = nil) {
+        self.name = name
+        self.visibility = visibility
+        self.isHidden = isHidden
+    }
+}
+
+/// Current net worth plus the stored daily snapshot series for charting.
+public struct NetWorthResponse: Codable, Sendable {
+    public var current: NetWorthPoint
+    public var series: [NetWorthPoint]
+    public init(current: NetWorthPoint, series: [NetWorthPoint]) {
+        self.current = current
+        self.series = series
+    }
+}
+
+/// Dev-only: link a Plaid sandbox institution without the Link UI.
+public struct SandboxLinkRequest: Codable, Sendable {
+    public var institutionId: String?
+    public var institutionName: String?
+    public var visibility: Visibility
+    public init(institutionId: String? = nil, institutionName: String? = nil, visibility: Visibility = .shared) {
+        self.institutionId = institutionId
+        self.institutionName = institutionName
+        self.visibility = visibility
+    }
+}
+
 // MARK: - Budgets
 
 /// Upsert a category's budget for a month (used by `PUT /v1/budgets/:categoryID`).

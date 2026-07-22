@@ -1,4 +1,5 @@
 import SwiftUI
+import BudgetModels
 
 /// P0 home screen: a connection banner proving app↔server connectivity, plus
 /// entry points to the not-yet-built features. Phase 6 replaces this with the
@@ -8,6 +9,22 @@ struct DashboardView: View {
 
     var body: some View {
         List {
+            if let netWorth = env.accountStore.netWorth {
+                Section {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("Net worth").font(.subheadline).foregroundStyle(.secondary)
+                            Text(currency(netWorth.current.net))
+                                .font(.system(.title, design: .rounded).bold())
+                        }
+                        Spacer()
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.title)
+                            .foregroundStyle(.tint)
+                    }
+                }
+            }
+
             Section("Backend") {
                 ConnectionRow(status: env.connectionStatus)
                 Button("Recheck connection") {

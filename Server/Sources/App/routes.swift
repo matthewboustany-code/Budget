@@ -10,4 +10,6 @@ func routes(_ app: Application) throws {
     try registerHealthRoutes(v1)
     registerAuthRoutes(v1)
     registerHouseholdRoutes(v1)
+    registerPlaidRoutes(v1)
+    registerAccountRoutes(v1)
 }

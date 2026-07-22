@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		BC0DE70000000000000000A4 /* BudgetModels in Frameworks */ = {isa = PBXBuildFile; productRef = BC0DE70000000000000000A2 /* BudgetModels */; };
 		BC0DE70000000000000000A5 /* BudgetKit in Frameworks */ = {isa = PBXBuildFile; productRef = BC0DE70000000000000000A3 /* BudgetKit */; };
+		BC0DE70000000000000000B4 /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = BC0DE70000000000000000B2 /* LinkKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,6 +60,7 @@
 			files = (
 				BC0DE70000000000000000A4 /* BudgetModels in Frameworks */,
 				BC0DE70000000000000000A5 /* BudgetKit in Frameworks */,
+				BC0DE70000000000000000B4 /* LinkKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -121,6 +123,7 @@
 			packageProductDependencies = (
 				BC0DE70000000000000000A2 /* BudgetModels */,
 				BC0DE70000000000000000A3 /* BudgetKit */,
+				BC0DE70000000000000000B2 /* LinkKit */,
 			);
 			productName = Budget;
 			productReference = 42A41F83300FB5A700A17450 /* Budget.app */;
@@ -206,6 +209,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				BC0DE70000000000000000A1 /* XCLocalSwiftPackageReference "Packages/BudgetCore" */,
+				BC0DE70000000000000000B1 /* XCRemoteSwiftPackageReference "plaid-link-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 42A41F84300FB5A700A17450 /* Products */;
@@ -635,6 +639,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		BC0DE70000000000000000B1 /* XCRemoteSwiftPackageReference "plaid-link-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/plaid/plaid-link-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		BC0DE70000000000000000A2 /* BudgetModels */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -643,6 +658,11 @@
 		BC0DE70000000000000000A3 /* BudgetKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = BudgetKit;
+		};
+		BC0DE70000000000000000B2 /* LinkKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BC0DE70000000000000000B1 /* XCRemoteSwiftPackageReference "plaid-link-ios" */;
+			productName = LinkKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -12,6 +12,8 @@
 .build/
 .swiftpm/
 Package.resolved
+# …but keep the app's pinned resolution (pins LinkKit for reproducible builds)
+!Budget.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 # Xcode
 xcuserdata/

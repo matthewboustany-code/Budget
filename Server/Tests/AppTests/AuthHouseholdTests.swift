@@ -14,9 +14,9 @@ struct AuthHouseholdTests {
     /// database file.
     private func withApp(_ test: (Application) async throws -> Void) async throws {
         let dbPath = NSTemporaryDirectory() + "budget-test-\(UUID().uuidString).sqlite"
-        setenv("BUDGET_DB_PATH", dbPath, 1)
         let app = try await Application.make(.testing)
         do {
+            app.appDatabase = try AppDatabase(path: dbPath)   // inject before configure
             try await configure(app)
             try await test(app)
         } catch {

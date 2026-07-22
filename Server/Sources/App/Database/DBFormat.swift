@@ -12,6 +12,9 @@ enum DBFormat {
 
     static func string(_ money: Money) -> String { NSDecimalNumber(decimal: money).stringValue }
     static func money(_ text: String?) -> Money { (text.flatMap { Decimal(string: $0) }) ?? 0 }
+    static func optMoney(_ text: String?) -> Money? { text.flatMap { Decimal(string: $0) } }
+
+    static func bool(_ int: Int?) -> Bool { (int ?? 0) != 0 }
 
     static func string(_ id: UUID) -> String { id.uuidString }
     static func uuid(_ text: String?) -> UUID? { text.flatMap { UUID(uuidString: $0) } }

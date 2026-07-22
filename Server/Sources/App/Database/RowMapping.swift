@@ -28,6 +28,29 @@ extension Household {
     }
 }
 
+extension Account {
+    init(row: Row) {
+        self.init(
+            id: DBFormat.uuid(row["id"]) ?? UUID(),
+            householdID: DBFormat.uuid(row["household_id"]) ?? UUID(),
+            ownerMemberID: DBFormat.uuid(row["owner_member_id"]) ?? UUID(),
+            name: row["name"],
+            officialName: row["official_name"],
+            type: AccountType(rawValue: row["type"]) ?? .other,
+            currentBalance: DBFormat.money(row["current_balance"]),
+            availableBalance: DBFormat.optMoney(row["available_balance"]),
+            currencyCode: row["currency_code"] ?? "USD",
+            institutionName: row["institution_name"],
+            mask: row["mask"],
+            visibility: Visibility(rawValue: row["visibility"]) ?? .shared,
+            isHidden: DBFormat.bool(row["is_hidden"]),
+            plaidAccountID: row["plaid_account_id"],
+            lastSyncedAt: DBFormat.date(row["last_synced_at"]),
+            createdAt: DBFormat.date(row["created_at"]) ?? Date()
+        )
+    }
+}
+
 extension HouseholdMember {
     init(row: Row) {
         self.init(

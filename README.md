@@ -100,7 +100,13 @@ Built in incremental, independently-runnable phases (see
   verification + our own session JWTs, with a dev-auth mode for testing);
   create/join a household via single-use invite codes; per-household membership.
   Onboarding + Settings UI. 5 server tests cover the full couples flow.
-- ⬜ P2 — Plaid link + accounts & net worth
+- ✅ **P2 — Plaid, accounts & net worth.** Plaid client (link-token, exchange,
+  accounts/balance, sandbox) with access tokens AES-GCM encrypted at rest;
+  account/balance sync; Accounts screen grouped by type with net worth and
+  per-account privacy toggle (owner-only); Plaid LinkKit for real linking plus a
+  dev sandbox-link path for testing; nightly balance + net-worth snapshot
+  commands. 9 server tests (incl. privacy enforcement); verified live against
+  Plaid sandbox (12 real accounts).
 - ⬜ P3 — Transactions (+ couples chat/reactions)
 - ⬜ P4 — Monarch-style monthly budgets
 - ⬜ P5 — Bills/recurring + goals

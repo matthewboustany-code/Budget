@@ -25,6 +25,13 @@ struct HouseholdStore {
         }
     }
 
+    /// All households (for the nightly net-worth snapshot command).
+    func allHouseholds() async throws -> [Household] {
+        try await db.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM households").map(Household.init(row:))
+        }
+    }
+
     func members(householdID: UUID) async throws -> [HouseholdMember] {
         try await db.read { db in
             try Row.fetchAll(db, sql: "SELECT * FROM memberships WHERE household_id = ? ORDER BY joined_at",

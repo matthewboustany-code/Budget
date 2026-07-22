@@ -41,6 +41,10 @@ extension Application {
         }
         set { storage[AppDatabaseKey.self] = newValue }
     }
+
+    /// Non-fatal check used by `configure` so tests can inject a database before
+    /// bootstrap (and so configure doesn't overwrite it).
+    var appDatabaseIfConfigured: AppDatabase? { storage[AppDatabaseKey.self] }
 }
 
 extension Request {
