@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import BudgetKit
 
 extension AppDatabase {
     /// Versioned schema. New changes append a new `registerMigration` block;
@@ -205,6 +206,24 @@ extension AppDatabase {
                 UNIQUE(household_id, date)
             );
             """)
+        }
+
+        // Recurring series are matched to freshly detected ones by a *stable*
+        // merchant key, not by their display name — the name is user-editable
+        // (rename), and keying on it orphaned the renamed series and spawned a
+        // duplicate on the next detection run. `merchant_key` is set once at
+        // insert from the normalized merchant name and never changes.
+        migrator.registerMigration("v2_recurring_merchant_key") { db in
+            try db.execute(sql: "ALTER TABLE recurring_series ADD COLUMN merchant_key TEXT NOT NULL DEFAULT ''")
+            // Backfill existing rows from their current name — the same key the
+            // detector would derive, so already-detected series keep matching.
+            for row in try Row.fetchAll(db, sql: "SELECT id, name FROM recurring_series") {
+                let id: String = row["id"]
+                let name: String = row["name"]
+                try db.execute(sql: "UPDATE recurring_series SET merchant_key = ? WHERE id = ?",
+                               arguments: [RecurringDetector.normalize(name), id])
+            }
+            try db.execute(sql: "CREATE INDEX idx_recurring_household_key ON recurring_series(household_id, merchant_key)")
         }
 
         return migrator

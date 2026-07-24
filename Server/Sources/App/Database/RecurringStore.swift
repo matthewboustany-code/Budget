@@ -66,22 +66,34 @@ struct RecurringStore {
         }
     }
 
-    /// Merge freshly detected series into storage, keyed by the normalized
-    /// merchant name. Detection owns the numbers (amount, cadence, dates,
-    /// account); the user owns the words and the switch (name, category once
-    /// set, and `isActive` — a series the user turned off never turns itself
-    /// back on). Stored series the detector no longer reports are left alone.
+    /// Merge freshly detected series into storage, keyed by the immutable
+    /// `merchant_key` (the normalized merchant name captured at insert). We
+    /// deliberately do NOT key on `name`: the user owns the name (rename), and
+    /// matching on it would orphan a renamed series and re-insert a duplicate
+    /// under the merchant name on the next run. Detection owns the numbers
+    /// (amount, cadence, dates, account); the user owns the words and the
+    /// switch (name, category once set, and `isActive` — a series the user
+    /// turned off never turns itself back on). Stored series the detector no
+    /// longer reports are left alone.
     func mergeDetected(householdID: UUID, detected: [RecurringSeries]) async throws {
         try await db.write { db in
-            let existing = try Row.fetchAll(
-                db, sql: "SELECT * FROM recurring_series WHERE household_id = ?",
-                arguments: [householdID.uuidString]).map(RecurringSeries.init(row:))
-            let existingByKey = Dictionary(
-                existing.map { (RecurringDetector.normalize($0.name), $0) },
-                uniquingKeysWith: { first, _ in first })
+            struct Stored { let id: String; let categoryID: UUID?; let isActive: Bool }
+            var existingByKey: [String: Stored] = [:]
+            for row in try Row.fetchAll(
+                db, sql: "SELECT id, merchant_key, category_id, is_active FROM recurring_series WHERE household_id = ?",
+                arguments: [householdID.uuidString]) {
+                let key: String = row["merchant_key"] ?? ""
+                // First row wins (a pre-fix duplicate can't resurrect itself).
+                if existingByKey[key] == nil {
+                    existingByKey[key] = Stored(id: row["id"],
+                                                categoryID: DBFormat.uuid(row["category_id"]),
+                                                isActive: DBFormat.bool(row["is_active"]))
+                }
+            }
 
             for series in detected {
-                if let stored = existingByKey[RecurringDetector.normalize(series.name)] {
+                let key = RecurringDetector.normalize(series.name)
+                if let stored = existingByKey[key] {
                     try db.execute(sql: """
                         UPDATE recurring_series
                         SET average_amount = ?, cadence = ?, account_id = ?,
@@ -93,14 +105,14 @@ struct RecurringStore {
                             series.lastDate.map(DBFormat.string), series.nextDate.map(DBFormat.string),
                             (stored.categoryID ?? series.categoryID)?.uuidString,
                             (stored.isActive && series.isActive) ? 1 : 0,
-                            stored.id.uuidString])
+                            stored.id])
                 } else {
                     try db.execute(sql: """
-                        INSERT INTO recurring_series (id, household_id, name, category_id,
+                        INSERT INTO recurring_series (id, household_id, merchant_key, name, category_id,
                             average_amount, cadence, account_id, last_date, next_date, is_active)
-                        VALUES (?,?,?,?,?,?,?,?,?,?)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?)
                         """, arguments: [
-                            series.id.uuidString, householdID.uuidString, series.name,
+                            series.id.uuidString, householdID.uuidString, key, series.name,
                             series.categoryID?.uuidString, DBFormat.string(series.averageAmount),
                             series.cadence.rawValue, series.accountID?.uuidString,
                             series.lastDate.map(DBFormat.string), series.nextDate.map(DBFormat.string),

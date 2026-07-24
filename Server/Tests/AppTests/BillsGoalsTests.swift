@@ -197,6 +197,35 @@ struct BillsGoalsTests {
         }
     }
 
+    @Test("Renaming a series survives re-detection without spawning a duplicate")
+    func renameDoesNotDuplicate() async throws {
+        try await withApp { app in
+            let alice = try await setupAlice(app)
+            let checking = try #require(try await accounts(app, token: alice.token).first { $0.type == .checking })
+            try await seedMonthly(app, account: checking, merchant: "Spotify",
+                                  amount: Decimal(string: "9.99")!)
+            let series = try await refresh(app, token: alice.token)
+            let spotify = try #require(series.first { $0.name.lowercased().contains("spotify") })
+
+            // The user owns the name — rename the detected series.
+            try await app.testing().test(.PATCH, "v1/recurring/\(spotify.id)", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateRecurringRequest(name: "Music Subscription")) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .ok)
+                    #expect(try res.content.decode(RecurringSeries.self).name == "Music Subscription")
+                })
+
+            // Re-detection matches on the immutable merchant key, so it updates
+            // the same row instead of re-inserting under the merchant name.
+            let after = try await refresh(app, token: alice.token)
+            #expect(after.filter { $0.id == spotify.id }.count == 1)
+            let renamed = try #require(after.first { $0.id == spotify.id })
+            #expect(renamed.name == "Music Subscription")            // rename preserved
+            #expect(renamed.averageAmount == Decimal(string: "9.99")) // numbers still updated
+            #expect(after.contains { $0.name.lowercased().contains("spotify") } == false)
+        }
+    }
+
     @Test("A series from a private account is invisible to the partner")
     func privateAccountSeriesHidden() async throws {
         try await withApp { app in
