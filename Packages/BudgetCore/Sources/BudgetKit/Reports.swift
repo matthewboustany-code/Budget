@@ -10,9 +10,10 @@ public enum ReportCalculator {
     /// function treats every transaction's sign at face value.
     public static func cashFlow(month: Month, transactions: [Transaction],
                                 calendar: Calendar = .current) -> CashFlowSummary {
+        let range = month.dateRange(calendar: calendar)   // computed once, not per tx
         var income: Money = 0
         var expenses: Money = 0
-        for tx in transactions where month.contains(tx.date, calendar: calendar) {
+        for tx in transactions where range.contains(tx.date) {
             if tx.amount < 0 { income += -tx.amount }   // inflow
             else { expenses += tx.amount }              // outflow
         }
@@ -30,8 +31,9 @@ public enum ReportCalculator {
             budgets.filter { $0.month == month }.map { ($0.categoryID, $0.amount) },
             uniquingKeysWith: { a, _ in a })
 
+        let range = month.dateRange(calendar: calendar)   // computed once, not per tx
         var totals: [UUID?: Money] = [:]
-        for tx in transactions where month.contains(tx.date, calendar: calendar) {
+        for tx in transactions where range.contains(tx.date) {
             for part in BudgetCalculator.categoryAmounts(for: tx) where part.amount > 0 {
                 totals[part.categoryID, default: 0] += part.amount
             }

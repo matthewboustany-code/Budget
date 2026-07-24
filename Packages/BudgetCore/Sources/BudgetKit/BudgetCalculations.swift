@@ -22,8 +22,12 @@ public enum BudgetCalculator {
     public static func spent(in categoryID: UUID, month: Month,
                              transactions: [Transaction],
                              calendar: Calendar = .current) -> Money {
+        // Resolve the month's bounds once — `month.contains` would otherwise
+        // recompute the range (two Calendar conversions) for every transaction,
+        // and this loop runs once per category per rollover level.
+        let range = month.dateRange(calendar: calendar)
         var total: Money = 0
-        for tx in transactions where month.contains(tx.date, calendar: calendar) {
+        for tx in transactions where range.contains(tx.date) {
             for part in categoryAmounts(for: tx) where part.categoryID == categoryID {
                 total += part.amount
             }
