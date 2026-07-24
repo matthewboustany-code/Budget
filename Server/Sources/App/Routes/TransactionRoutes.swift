@@ -1,5 +1,6 @@
 import Vapor
 import BudgetModels
+import BudgetKit
 
 /// Transactions list/detail, edits, and the couples activity layer (comments +
 /// emoji reactions). Every route is scoped to the caller's household and honors
@@ -37,6 +38,16 @@ func registerTransactionRoutes(_ routes: RoutesBuilder) {
         // Only the owner may change a transaction's visibility.
         if body.visibility != nil && tx.ownerMemberID != member.id {
             throw Abort(.forbidden, reason: "Only the owner can change visibility.")
+        }
+        // Splits must sum to the transaction total; otherwise the category
+        // rollups silently disagree with the actual charge. An empty array
+        // clears the split and always balances.
+        if let splits = body.splits {
+            var candidate = tx
+            candidate.splits = splits
+            guard splitsBalance(candidate) else {
+                throw Abort(.badRequest, reason: "Split amounts must add up to the transaction total.")
+            }
         }
         try await req.transactions.update(id: tx.id, body)
         return try await req.transactions.get(id: tx.id) ?? tx

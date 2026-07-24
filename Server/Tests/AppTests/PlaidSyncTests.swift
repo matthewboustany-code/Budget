@@ -281,6 +281,39 @@ struct PlaidSyncTests {
         }
     }
 
+    @Test("Split amounts must add up to the transaction total")
+    func splitsMustBalance() async throws {
+        try await withApp { app in
+            let alice = try await setupAliceWithData(app)
+            let wholeFoods = try #require(try await fetchTransactions(app, token: alice.token)
+                .first { $0.name.contains("Whole Foods") })   // amount 52.40
+            let cats = try await fetchCategories(app, token: alice.token)
+            let groceries = try #require(cats.first { $0.name == "Groceries" })
+            let shopping = try #require(cats.first { $0.name == "Shopping" })
+
+            // Unbalanced (40 + 10 = 50 ≠ 52.40) is rejected.
+            try await app.testing().test(.PATCH, "v1/transactions/\(wholeFoods.id)", headers: bearer(alice.token),
+                beforeRequest: {
+                    try $0.content.encode(UpdateTransactionRequest(splits: [
+                        TransactionSplit(id: UUID(), categoryID: groceries.id, amount: 40),
+                        TransactionSplit(id: UUID(), categoryID: shopping.id, amount: 10),
+                    ]))
+                }, afterResponse: { res async in #expect(res.status == .badRequest) })
+
+            // Balanced (40.00 + 12.40 = 52.40) is accepted.
+            try await app.testing().test(.PATCH, "v1/transactions/\(wholeFoods.id)", headers: bearer(alice.token),
+                beforeRequest: {
+                    try $0.content.encode(UpdateTransactionRequest(splits: [
+                        TransactionSplit(id: UUID(), categoryID: groceries.id, amount: Decimal(string: "40.00")!),
+                        TransactionSplit(id: UUID(), categoryID: shopping.id, amount: Decimal(string: "12.40")!),
+                    ]))
+                }, afterResponse: { res async throws in
+                    #expect(res.status == .ok)
+                    #expect(try res.content.decode(Transaction.self).splits.count == 2)
+                })
+        }
+    }
+
     @Test("Comments and emoji reactions on a transaction")
     func commentsAndReactions() async throws {
         try await withApp { app in
