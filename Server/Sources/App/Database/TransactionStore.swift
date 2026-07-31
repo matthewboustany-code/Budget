@@ -27,7 +27,10 @@ struct TransactionStore {
               AND (a.visibility = 'shared' OR a.owner_member_id = ?)
               AND (t.visibility = 'shared' OR t.owner_member_id = ?)
             """
-        var args: [any DatabaseValueConvertible] = [householdID.uuidString, memberID.uuidString, memberID.uuidString]
+        // Optional element type on purpose: `any DatabaseValueConvertible` does
+        // not self-conform, so a non-optional array only matches the *failable*
+        // StatementArguments.init?([Any]) and yields a StatementArguments?.
+        var args: [(any DatabaseValueConvertible)?] = [householdID.uuidString, memberID.uuidString, memberID.uuidString]
         if let from = filter.from { sql += " AND t.date >= ?"; args.append(DBFormat.string(from)) }
         if let to = filter.to { sql += " AND t.date <= ?"; args.append(DBFormat.string(to)) }
         if let accountID = filter.accountID { sql += " AND t.account_id = ?"; args.append(accountID.uuidString) }
@@ -40,10 +43,13 @@ struct TransactionStore {
         args.append(filter.limit + 1)   // fetch one extra to detect another page
         args.append(filter.offset)
 
-        let rows = try await db.read { db in
-            try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+        // Map inside the read: `Row` isn't Sendable, so `[Row]` can't cross the
+        // async boundary — on Linux that fails to type-check outright.
+        let arguments = StatementArguments(args)
+        var transactions = try await db.read { db in
+            try Row.fetchAll(db, sql: sql, arguments: arguments)
+                .map(Transaction.init(row:))
         }
-        var transactions = rows.map(Transaction.init(row:))
         var nextCursor: String?
         if transactions.count > filter.limit {
             transactions.removeLast()
