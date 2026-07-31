@@ -57,8 +57,13 @@ VOLUME /data
 
 ENV SWIFT_BACKTRACE=enable=yes,sanitize=yes,threads=all,images=all,interactive=no,swift-backtrace=./swift-backtrace-static
 ENV BUDGET_DB_PATH=/data/budget.sqlite
+# Applies to EVERY invocation, not just `serve` — the one-off commands
+# (sync-all, bill-reminder, …) would otherwise default to development, which
+# turns dev auth on and skips the production config validation. Vapor takes
+# VAPOR_ENV as the fallback for `--env`, so `--env` still overrides it.
+ENV VAPOR_ENV=production
 
 USER vapor:vapor
 EXPOSE 8080
 ENTRYPOINT ["./App"]
-CMD ["serve", "--env", "production", "--hostname", "0.0.0.0", "--port", "8080"]
+CMD ["serve", "--hostname", "0.0.0.0", "--port", "8080"]

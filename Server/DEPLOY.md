@@ -52,7 +52,9 @@ The image builds from the repo root so the `../Packages/BudgetCore` path
 dependency resolves — compose sets that context for you.
 
 **Production refuses placeholder secrets.** If the server exits immediately,
-`docker compose logs server` will name the variable it rejected.
+`docker compose logs server` will name the variable it rejected — one
+`Configuration error:` line, exit code **78** (`EX_CONFIG`). Compose will keep
+restarting it, so a config mistake shows up as a steady loop of that one line.
 
 ## Point the app at it
 
@@ -84,7 +86,9 @@ household with an invite code from Settings.
   auto-renewing certificates) is the only way in.
 - **Boot-time secret validation** — production refuses dev-placeholder or
   missing `SESSION_JWT_SECRET` / `PLAID_TOKEN_ENC_KEY`, and refuses
-  `AUTH_DEV_MODE`.
+  `AUTH_DEV_MODE`. The image sets `VAPOR_ENV=production`, so the scheduled
+  one-off commands get the same validation as `serve` rather than silently
+  running in development (pass `--env development` to override locally).
 - **Plaid webhooks verified** — the `Plaid-Verification` ES256 JWT is checked
   (signature via Plaid's per-`kid` JWK, ≤5-minute freshness, exact body
   SHA-256) before any webhook is acted on.

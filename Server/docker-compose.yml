@@ -25,6 +25,10 @@ services:
       # The database always lives on the mounted volume in Docker, regardless
       # of what a local-dev .env says.
       BUDGET_DB_PATH: /data/budget.sqlite
+      # Production's default log level is `notice`, which would silence the
+      # INFO lines sync-cron.sh captures ("Synced N item(s)", "Bill reminders
+      # checked for N household(s)") and leave the nightly log empty on success.
+      LOG_LEVEL: "${BUDGET_LOG_LEVEL:-info}"
     volumes:
       - "${BUDGET_DATA_DIR:-./data}:/data"
     expose:
