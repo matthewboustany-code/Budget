@@ -9,7 +9,11 @@ import BudgetModels
 @MainActor
 final class APIClient {
     private let session: URLSession
-    private let baseURL: URL
+    /// Set only when a caller pins a URL (tests, previews). Otherwise the base
+    /// URL is read from `ServerConfig` on every request, so editing it in
+    /// Settings takes effect immediately instead of at the next launch.
+    private let pinnedBaseURL: URL?
+    private var baseURL: URL { pinnedBaseURL ?? ServerConfig.baseURL }
     private let tokenProvider: () -> String?
 
     private let encoder: JSONEncoder = {
@@ -23,10 +27,10 @@ final class APIClient {
         return d
     }()
 
-    init(baseURL: URL = ServerConfig.baseURL,
+    init(baseURL: URL? = nil,
          session: URLSession = .shared,
          tokenProvider: @escaping () -> String?) {
-        self.baseURL = baseURL
+        self.pinnedBaseURL = baseURL
         self.session = session
         self.tokenProvider = tokenProvider
     }

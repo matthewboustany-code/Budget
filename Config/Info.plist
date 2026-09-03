@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged into the Xcode-generated Info.plist (GENERATE_INFOPLIST_FILE
+	     stays YES). NSAllowsLocalNetworking permits cleartext HTTP only to
+	     .local names and private/link-local addresses, so a self-hosted
+	     backend on the LAN is reachable during testing while arbitrary
+	     internet HTTP stays blocked. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Budget connects to your self-hosted budget server on your local network.</string>
+</dict>
+</plist>
