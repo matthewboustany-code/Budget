@@ -42,6 +42,17 @@ Edit `.env`:
 | `BUDGET_DOMAIN` | your DNS name |
 | `BUDGET_DATA_DIR` | where the database should live on the host (default `./data`) |
 
+`BUDGET_DATA_DIR` is bind-mounted into the container, and the image runs as its
+unprivileged `vapor` user (**uid 999**) — not as the user doing the deploy. A
+directory Docker creates for the bind mount is owned by that deploying user, so
+the server dies on boot with `SQLite error 14: unable to open database file`.
+Create it and hand it over first:
+
+```bash
+mkdir -p "${BUDGET_DATA_DIR:-./data}"
+sudo chown -R 999:999 "${BUDGET_DATA_DIR:-./data}"
+```
+
 Then:
 
 ```bash
@@ -59,11 +70,33 @@ restarting it, so a config mistake shows up as a steady loop of that one line.
 
 ## Point the app at it
 
-In the iOS app the server URL comes from `ServerConfig` (UserDefaults key
-`serverBaseURL`, or the `-serverBaseURL` launch argument in DEBUG). Set it to
-`https://<BUDGET_DOMAIN>`. Real Sign in with Apple requires the app built with
+In the iOS app, open **Settings → Backend → Server** and enter the address.
+Set it to `https://<BUDGET_DOMAIN>`. Changing it signs you out, because the
+session token was minted by the previous server. (Under the hood this is
+`ServerConfig`, UserDefaults key `serverBaseURL`; DEBUG builds can also be
+pointed with the `-serverBaseURL` launch argument.) The built-in default is
+`http://localhost:8080`, which only resolves in the Simulator — a real device
+must be given a reachable address here. Real Sign in with Apple requires the app built with
 the entitlement and your Apple team; each partner signs in and joins the
 household with an invite code from Settings.
+
+## LAN testing without a domain
+
+For user testing on a device with no public DNS name, use the alternate stack:
+
+```bash
+docker compose -f docker-compose.lan.yml up -d --build
+curl http://<host-lan-ip>:8081/v1/health
+```
+
+It publishes the API directly and runs no Caddy, because Let's Encrypt cannot
+issue a certificate for a private address and iOS would reject a self-signed
+one. The app's `NSAllowsLocalNetworking` exception (`Config/Info.plist`) permits
+cleartext HTTP to private addresses only, so `http://192.168.x.x:8081` works
+while arbitrary internet HTTP stays blocked. Set `BUDGET_LAN_PORT` if 8081 is
+taken. It stores data in a named volume, so it needs none of the `chown` above.
+
+This stack has **no TLS** — keep it on the LAN, never port-forward it.
 
 ## Scheduled jobs (cron on the host)
 

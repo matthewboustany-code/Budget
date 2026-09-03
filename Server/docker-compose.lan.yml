@@ -26,6 +26,16 @@ services:
       BUDGET_DB_PATH: /data/budget.sqlite
       LOG_LEVEL: "${BUDGET_LOG_LEVEL:-info}"
     volumes:
-      - "${BUDGET_DATA_DIR:-./data}:/data"
+      # A named volume, not a host bind mount: Docker initializes its ownership
+      # from the image, so it just works as the image's `vapor` user (uid 999).
+      # A bind-mounted host directory is created owned by the deploying user
+      # instead, and the server dies with "SQLite error 14: unable to open
+      # database file" until it is chown'd to 999:999.
+      - budget_data:/data
     ports:
-      - "8080:8080"
+      # Host port is configurable because 8080 is a popular default and may
+      # already be taken by another service on the same box.
+      - "${BUDGET_LAN_PORT:-8081}:8080"
+
+volumes:
+  budget_data:
