@@ -12,6 +12,11 @@ import VaporAPNS
 enum PushService {
     /// Wires `app.apns` when all four credentials are present. Returns whether
     /// push is live so callers can log the distinction once, at boot.
+    ///
+    /// **Both** the sandbox and production containers are registered from the
+    /// same key — a token-based APNs key is not environment-specific, unlike
+    /// the legacy certificates. Registering both is what lets `send` route each
+    /// device to the host that actually minted its token.
     @discardableResult
     static func configure(_ app: Application) async -> Bool {
         let config = app.appConfig
@@ -27,14 +32,25 @@ enum PushService {
                 privateKey: .init(pemRepresentation: p8),
                 keyIdentifier: keyID,
                 teamIdentifier: teamID)
-            let environment: APNSEnvironment = config.apnsUseProduction ? .production : .development
-            await app.apns.containers.use(
-                APNSClientConfiguration(authenticationMethod: authenticator, environment: environment),
-                eventLoopGroupProvider: .shared(app.eventLoopGroup),
-                responseDecoder: JSONDecoder(),
-                requestEncoder: JSONEncoder(),
-                as: .default)
-            app.logger.info("APNs ready (topic \(topic), \(config.apnsUseProduction ? "production" : "sandbox"))")
+            // The default container follows APNS_ENV, and is what a token with
+            // no recorded environment falls back to.
+            // `isDefault` is precomputed: Vapor also has an `Environment`, so
+            // comparing `environment == .production` inline resolves to the
+            // wrong type.
+            let containers: [(APNSContainers.ID, APNSEnvironment, Bool)] = [
+                (.development, .development, !config.apnsUseProduction),
+                (.production, .production, config.apnsUseProduction),
+            ]
+            for (id, environment, isDefault) in containers {
+                await app.apns.containers.use(
+                    APNSClientConfiguration(authenticationMethod: authenticator, environment: environment),
+                    eventLoopGroupProvider: .shared(app.eventLoopGroup),
+                    responseDecoder: JSONDecoder(),
+                    requestEncoder: JSONEncoder(),
+                    as: id,
+                    isDefault: isDefault)
+            }
+            app.logger.info("APNs ready (topic \(topic), sandbox + production; default \(config.apnsUseProduction ? "production" : "sandbox"))")
             return true
         } catch {
             // A malformed key shouldn't take the whole server down; reminders
@@ -61,8 +77,14 @@ enum PushService {
                 payload: EmptyPayload(),
                 sound: .default,
                 threadID: threadID)
+            // Route by the environment the token was registered with: a
+            // sandbox token is rejected outright by the production host, and
+            // both kinds coexist as soon as there's a TestFlight build
+            // alongside a development one.
+            let container: APNSContainers.ID = device.environment == "production" ? .production : .development
             do {
-                try await app.apns.client.sendAlertNotification(notification, deviceToken: device.token)
+                try await app.apns.client(container)
+                    .sendAlertNotification(notification, deviceToken: device.token)
             } catch let error as APNSError where error.reason == .badDeviceToken || error.reason == .unregistered {
                 app.logger.info("Pruning dead device token (\(error.reason.map(String.init(describing:)) ?? "unknown")).")
                 try? await store.unregister(token: device.token)

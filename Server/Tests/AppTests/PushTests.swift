@@ -141,6 +141,23 @@ struct PushTests {
         }
     }
 
+    @Test("A production registration is stored as production, not coerced")
+    func keepsProductionEnvironment() async throws {
+        try await withApp { app, token, userID in
+            try await app.testing().test(.POST, "v1/devices", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: token)
+                try req.content.encode(RegisterDeviceRequest(token: "cafe", environment: "production"))
+            }, afterResponse: { res async in
+                #expect(res.status == .noContent)
+            })
+            let stored = try await DeviceTokenStore(db: app.appDatabase.dbPool)
+                .tokens(userIDs: [userID])
+            // Routing depends on this: a sandbox token sent to the production
+            // host is rejected outright.
+            #expect(stored.first?.environment == "production")
+        }
+    }
+
     @Test("Push stays off unless every credential is present")
     func partialCredentialsDoNotEnablePush() {
         var config = AppConfig(appleBundleID: "x", sessionJWTSecret: "s",
