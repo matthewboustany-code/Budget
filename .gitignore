@@ -14,6 +14,10 @@
 Package.resolved
 # …but keep the app's pinned resolution (pins LinkKit for reproducible builds)
 !Budget.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+# …and the server's, which Server/Dockerfile COPYs — without it committed, the
+# image cannot be built from a fresh clone, only from a working tree that
+# happens to have resolved already.
+!Server/Package.resolved
 
 # Xcode
 xcuserdata/

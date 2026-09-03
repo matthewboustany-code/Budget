@@ -1,0 +1,31 @@
+# LAN testing stack: the Vapor API published directly on port 8080, with no
+# Caddy in front. Two reasons this exists alongside docker-compose.yml:
+#
+#   1. A host may already run its own reverse proxy on 80/443, which the
+#      production stack's bundled Caddy would collide with.
+#   2. Let's Encrypt cannot issue a certificate for a private LAN address, and
+#      a self-signed cert would be rejected by iOS anyway. The app's
+#      NSAllowsLocalNetworking exception permits cleartext HTTP to private
+#      addresses, so testers can reach it over plain HTTP on the LAN.
+#
+# NOT for internet exposure — there is no TLS here. Use docker-compose.yml with
+# a real domain for that.
+#
+#   docker compose -f docker-compose.lan.yml up -d --build
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: Server/Dockerfile
+    image: budget-server
+    container_name: budget-server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      BUDGET_DB_PATH: /data/budget.sqlite
+      LOG_LEVEL: "${BUDGET_LOG_LEVEL:-info}"
+    volumes:
+      - "${BUDGET_DATA_DIR:-./data}:/data"
+    ports:
+      - "8080:8080"
