@@ -4,11 +4,11 @@
 #   Server/scripts/encrypt-db.sh
 #
 # Uses SQLCipher's `sqlcipher_export`, which streams every page through the
-# cipher into a new file. It is not an in-place rewrite, so the original is left
-# untouched until the new file is verified — if anything fails, nothing is lost.
+# cipher into a new file. It is not an in-place rewrite: the original is left
+# untouched until the copy is verified, so a failure loses nothing.
 #
-# Stop the server first: copying a database out from under a live writer is how
-# you get a torn backup.
+# Stops the server first — copying a database out from under a live writer is
+# how you get a torn backup.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -25,49 +25,77 @@ compose_file="${BUDGET_COMPOSE_FILE:-docker-compose.tunnel.yml}"
 echo "Stopping the server so the database has no live writer…"
 docker compose -f "$compose_file" stop server
 
-# Run against the volume with the server down, using the image's own sqlcipher.
-docker compose -f "$compose_file" run --rm --no-deps --entrypoint sh server -c '
-  set -e
-  cd /data
-  if [ ! -f budget.sqlite ]; then echo "no budget.sqlite in /data"; exit 1; fi
+# The inner script goes in on stdin (`sh -s`) rather than as a -c argument, so
+# there is only one level of shell quoting to reason about. The key is read from
+# the container's own environment (compose loads .env for the service), so it
+# never appears in the host's process list.
+docker compose -f "$compose_file" run --rm --no-deps -T --entrypoint sh server -s <<'INNER'
+set -eu
+cd /data
 
-  # A plaintext SQLite file starts with this magic; an encrypted one does not.
-  if head -c 15 budget.sqlite | grep -q "SQLite format 3"; then
-    echo "Found a plaintext database. Encrypting…"
-  else
-    echo "budget.sqlite is already encrypted (no SQLite header). Nothing to do."
-    exit 0
-  fi
+[ -f budget.sqlite ] || { echo "no budget.sqlite in /data"; exit 1; }
 
-  rm -f budget-encrypted.sqlite
-  # Checkpoint any WAL content into the main file first, so nothing is missed.
-  sqlcipher budget.sqlite "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null
+# A plaintext SQLite file starts with this magic; an encrypted one does not.
+if head -c 15 budget.sqlite | grep -q "SQLite format 3"; then
+  echo "Found a plaintext database. Encrypting…"
+else
+  echo "budget.sqlite is already encrypted. Nothing to do."
+  exit 0
+fi
 
-  sqlcipher budget.sqlite <<SQL
-ATTACH DATABASE '"'"'/data/budget-encrypted.sqlite'"'"' AS enc KEY '"'"'"$BUDGET_DB_ENCRYPTION_KEY"'"'"';
-SELECT sqlcipher_export('"'"'enc'"'"');
+rm -f budget-encrypted.sqlite
+
+# Fold any WAL content into the main file so nothing is left behind.
+sqlcipher budget.sqlite "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null
+
+before=$(sqlcipher budget.sqlite "SELECT count(*) FROM sqlite_master;")
+
+sqlcipher budget.sqlite <<SQL
+ATTACH DATABASE '/data/budget-encrypted.sqlite' AS enc KEY '$BUDGET_DB_ENCRYPTION_KEY';
+SELECT sqlcipher_export('enc');
 DETACH DATABASE enc;
 SQL
 
-  echo "Verifying the encrypted copy opens and matches…"
-  before=$(sqlcipher budget.sqlite "SELECT count(*) FROM sqlite_master;")
-  after=$(sqlcipher budget-encrypted.sqlite "PRAGMA key = '"'"'"$BUDGET_DB_ENCRYPTION_KEY"'"'"'; SELECT count(*) FROM sqlite_master;")
-  echo "  schema objects: $before -> $after"
-  [ "$before" = "$after" ] || { echo "MISMATCH — leaving the original in place"; exit 1; }
+echo "Verifying the encrypted copy…"
+# PRAGMA key must be the first statement on the connection, so these go in
+# together on stdin rather than as a command-line argument.
+# `.output` silences the pragma's own "ok" row, which would otherwise end up
+# in the captured value and fail every comparison below.
+after=$(sqlcipher budget-encrypted.sqlite <<SQL
+.output /dev/null
+PRAGMA key = '$BUDGET_DB_ENCRYPTION_KEY';
+.output stdout
+SELECT count(*) FROM sqlite_master;
+SQL
+)
+integrity=$(sqlcipher budget-encrypted.sqlite <<SQL
+.output /dev/null
+PRAGMA key = '$BUDGET_DB_ENCRYPTION_KEY';
+.output stdout
+PRAGMA integrity_check;
+SQL
+)
 
-  integrity=$(sqlcipher budget-encrypted.sqlite "PRAGMA key = '"'"'"$BUDGET_DB_ENCRYPTION_KEY"'"'"'; PRAGMA integrity_check;")
-  echo "  integrity_check: $integrity"
-  [ "$integrity" = "ok" ] || { echo "INTEGRITY FAILED — leaving the original in place"; exit 1; }
+echo "  schema objects: $before -> $after"
+echo "  integrity_check: $integrity"
+[ "$before" = "$after" ] || { echo "MISMATCH — leaving the original in place"; exit 1; }
+[ "$integrity" = "ok" ]  || { echo "INTEGRITY FAILED — leaving the original in place"; exit 1; }
 
-  mv budget.sqlite budget-plaintext.sqlite.bak
-  mv budget-encrypted.sqlite budget.sqlite
-  rm -f budget.sqlite-wal budget.sqlite-shm
-  echo "Done. The old plaintext file is /data/budget-plaintext.sqlite.bak"
-'
+# Confirm the new file really is encrypted before we trust it with the data.
+if head -c 15 budget-encrypted.sqlite | grep -q "SQLite format 3"; then
+  echo "The 'encrypted' copy still has a plaintext header — refusing to swap it in."
+  exit 1
+fi
+
+mv budget.sqlite budget-plaintext.sqlite.bak
+mv budget-encrypted.sqlite budget.sqlite
+rm -f budget.sqlite-wal budget.sqlite-shm
+echo "Done. The old plaintext file is /data/budget-plaintext.sqlite.bak"
+INNER
 
 echo
 echo "Starting the server…"
 docker compose -f "$compose_file" up -d server
 echo
-echo "Once you have confirmed the app works, delete the plaintext backup:"
+echo "Once you have confirmed the app works, delete the plaintext original:"
 echo "  docker compose -f $compose_file exec server rm /data/budget-plaintext.sqlite.bak"
