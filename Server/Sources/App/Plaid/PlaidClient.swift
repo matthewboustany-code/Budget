@@ -72,8 +72,23 @@ struct PlaidClient: Sendable {
             clientId: clientId, secret: secret, publicToken: publicToken))
     }
 
+    /// `/accounts/get`, deliberately, not `/accounts/balance/get`.
+    ///
+    /// They return the same shape; the difference is that
+    /// `/accounts/balance/get` forces a live fetch from the bank and Plaid
+    /// bills a flat fee for **every successful call**, while `/accounts/get`
+    /// serves Plaid's cached balances and is free with Transactions. The
+    /// nightly `sync-all` calls this once per item and then immediately runs
+    /// `/transactions/sync` on the same item, which refreshes that cache
+    /// anyway — so the paid endpoint was buying a few hours' freshness, per
+    /// item, per night, forever.
+    ///
+    /// Budgets and net worth do not need to-the-second balances. If some future
+    /// feature does (paying a bill against a live balance, say), call the
+    /// real-time endpoint there specifically rather than making every sync pay
+    /// for it.
     func getAccounts(accessToken: String) async throws -> PlaidAccountsResponse {
-        try await call("/accounts/balance/get", PlaidAccessTokenRequest(
+        try await call("/accounts/get", PlaidAccessTokenRequest(
             clientId: clientId, secret: secret, accessToken: accessToken))
     }
 

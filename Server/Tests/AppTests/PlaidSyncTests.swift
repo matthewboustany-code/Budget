@@ -15,7 +15,7 @@ struct MockPlaidTransport: PlaidTransport {
             body = #"{"public_token":"public-sandbox-abc"}"#
         case "/item/public_token/exchange":
             body = #"{"access_token":"access-sandbox-xyz","item_id":"item-123"}"#
-        case "/accounts/balance/get":
+        case "/accounts/get":
             body = """
             {"accounts":[
               {"account_id":"acc_check","name":"Plaid Checking","official_name":"Plaid Gold Checking",
