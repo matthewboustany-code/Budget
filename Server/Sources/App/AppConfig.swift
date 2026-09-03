@@ -13,6 +13,11 @@ struct AppConfig: Sendable {
     var plaidWebhookURL: String?
     var plaidTokenEncKey: String
 
+    /// SQLCipher passphrase for the database file. Required in production: the
+    /// whole point is that a leaked volume or snapshot is not readable, and an
+    /// optional-in-production setting is one that eventually isn't set.
+    var dbEncryptionKey: String?
+
     /// When true, `POST /v1/auth/apple` accepts a dev token instead of a real
     /// Apple identity token, so the whole flow can be exercised on the
     /// simulator without an Apple Developer account. Never enable in production.
@@ -67,6 +72,7 @@ struct AppConfig: Sendable {
                 .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) },
             plaidWebhookURL: Environment.get("PLAID_WEBHOOK_URL").flatMap { $0.isEmpty ? nil : $0 },
             plaidTokenEncKey: Environment.get("PLAID_TOKEN_ENC_KEY") ?? "",
+            dbEncryptionKey: Environment.get("BUDGET_DB_ENCRYPTION_KEY")?.nilIfBlank,
             // Dev auth defaults ON outside production so local runs "just work".
             authDevMode: devModeRequested ?? (env != .production),
             apnsKeyID: Environment.get("APNS_KEY_ID")?.nilIfBlank,
@@ -98,6 +104,10 @@ struct AppConfig: Sendable {
         if config.plaidTokenEncKey.isEmpty
             || config.plaidTokenEncKey.hasPrefix("change-me") {
             throw ConfigError.missingSecret("PLAID_TOKEN_ENC_KEY")
+        }
+        let dbKey = config.dbEncryptionKey ?? ""
+        if dbKey.isEmpty || dbKey.hasPrefix("change-me") || dbKey.count < 32 {
+            throw ConfigError.missingSecret("BUDGET_DB_ENCRYPTION_KEY")
         }
     }
 }

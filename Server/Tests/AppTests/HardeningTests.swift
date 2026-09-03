@@ -15,11 +15,12 @@ struct HardeningTests {
     // MARK: - Config fail-fast
 
     private func config(jwtSecret: String = String(repeating: "a", count: 40),
-                        encKey: String = "3fb2…realish-key") -> AppConfig {
+                        encKey: String = "3fb2…realish-key",
+                        dbKey: String? = String(repeating: "d", count: 64)) -> AppConfig {
         AppConfig(appleBundleID: "com.mbandhb.budget", sessionJWTSecret: jwtSecret,
                   plaidClientID: "id", plaidSecret: "secret", plaidEnv: "production",
                   plaidProducts: ["transactions"], plaidWebhookURL: nil,
-                  plaidTokenEncKey: encKey, authDevMode: false)
+                  plaidTokenEncKey: encKey, dbEncryptionKey: dbKey, authDevMode: false)
     }
 
     @Test("Production refuses placeholder or short secrets and dev mode")
@@ -43,6 +44,21 @@ struct HardeningTests {
             try AppConfig.validate(config(encKey: "change-me-to-32-bytes-hex"),
                                    env: .production, devModeRequested: nil)
         }
+
+        // The database passphrase is required in production: an unset one means
+        // the whole file is readable to anyone who gets the volume.
+        #expect(throws: AppConfig.ConfigError.self) {
+            try AppConfig.validate(config(dbKey: nil),
+                                   env: .production, devModeRequested: nil)
+        }
+        #expect(throws: AppConfig.ConfigError.self) {
+            try AppConfig.validate(config(dbKey: "change-me-to-a-long-random-string"),
+                                   env: .production, devModeRequested: nil)
+        }
+        #expect(throws: AppConfig.ConfigError.self) {
+            try AppConfig.validate(config(dbKey: "too-short"),
+                                   env: .production, devModeRequested: nil)
+        }
         #expect(throws: AppConfig.ConfigError.self) {
             try AppConfig.validate(config(), env: .production, devModeRequested: true)
         }
@@ -50,7 +66,8 @@ struct HardeningTests {
 
     @Test("Development keeps its permissive defaults")
     func developmentValidation() throws {
-        try AppConfig.validate(config(jwtSecret: "dev-insecure-secret-change-me", encKey: ""),
+        try AppConfig.validate(config(jwtSecret: "dev-insecure-secret-change-me",
+                                      encKey: "", dbKey: nil),
                                env: .development, devModeRequested: true)
     }
 

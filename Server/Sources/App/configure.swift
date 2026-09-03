@@ -32,8 +32,9 @@ public func configure(_ app: Application) async throws {
     if app.appDatabaseIfConfigured == nil {
         let dbPath = Environment.get("BUDGET_DB_PATH")
             ?? app.directory.workingDirectory + "budget.sqlite"
-        app.appDatabase = try AppDatabase(path: dbPath)
-        app.logger.info("Database ready at \(dbPath)")
+        let dbKey = app.appConfig.dbEncryptionKey
+        app.appDatabase = try AppDatabase(path: dbPath, encryptionKey: dbKey)
+        app.logger.info("Database ready at \(dbPath) (encrypted: \(dbKey != nil))")
     }
 
     // APNs for bill reminders. Optional: unconfigured means reminders log only.

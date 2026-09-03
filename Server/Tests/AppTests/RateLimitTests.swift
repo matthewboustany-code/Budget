@@ -105,3 +105,44 @@ struct RateLimitTests {
         }
     }
 }
+
+@Suite("Database encryption")
+struct DatabaseEncryptionTests {
+
+    /// The macOS test host links Apple's SQLite, which has no cipher. That is
+    /// exactly the condition this guard exists for: asking for encryption where
+    /// it cannot be delivered must fail loudly, never fall back to plaintext.
+    @Test("Requesting encryption without SQLCipher refuses to open")
+    func refusesWhenCipherMissing() throws {
+        let path = NSTemporaryDirectory() + "budget-enc-\(UUID().uuidString).sqlite"
+        defer { for s in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + s) } }
+
+        let cipherAvailable = isSQLCipherLinked()
+        if cipherAvailable {
+            // On an image that links SQLCipher, the same call must succeed and
+            // the file must not contain the plaintext SQLite header.
+            _ = try AppDatabase(path: path, encryptionKey: String(repeating: "k", count: 64))
+            let head = try FileHandle(forReadingFrom: URL(fileURLWithPath: path)).read(upToCount: 16) ?? Data()
+            #expect(!head.starts(with: Array("SQLite format 3".utf8)))
+        } else {
+            #expect(throws: AppDatabase.EncryptionError.self) {
+                _ = try AppDatabase(path: path, encryptionKey: String(repeating: "k", count: 64))
+            }
+        }
+    }
+
+    @Test("No key means an ordinary unencrypted database, as before")
+    func plaintextStillWorks() throws {
+        let path = NSTemporaryDirectory() + "budget-plain-\(UUID().uuidString).sqlite"
+        defer { for s in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + s) } }
+        _ = try AppDatabase(path: path)
+        let head = try FileHandle(forReadingFrom: URL(fileURLWithPath: path)).read(upToCount: 16) ?? Data()
+        #expect(head.starts(with: Array("SQLite format 3".utf8)))
+    }
+
+    private func isSQLCipherLinked() -> Bool {
+        let probe = NSTemporaryDirectory() + "budget-probe-\(UUID().uuidString).sqlite"
+        defer { try? FileManager.default.removeItem(atPath: probe) }
+        return (try? AppDatabase(path: probe, encryptionKey: String(repeating: "k", count: 64))) != nil
+    }
+}

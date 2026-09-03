@@ -10,10 +10,22 @@
 # ================================ Build stage ================================
 FROM swift:6.1-noble AS build
 
-# GRDB links the system SQLite on Linux.
+# GRDB links the system SQLite on Linux, so we give it SQLCipher instead of
+# stock SQLite. SQLCipher is a fork of SQLite with the same API and ABI plus
+# the `PRAGMA key` family, so aliasing it into libsqlite3's place transparently
+# gets us an encrypted database with an unmodified, unforked GRDB. (GRDB's own
+# SQLCipher instructions require editing ITS Package.swift, i.e. vendoring a
+# fork of it — much worse to live with than two symlinks.)
+#
+# AppDatabase verifies at runtime that `PRAGMA cipher_version` actually answers,
+# so if this aliasing ever silently stops working the server refuses to boot
+# rather than writing financial data in the clear.
 RUN export DEBIAN_FRONTEND=noninteractive \
  && apt-get -q update \
- && apt-get -q install -y libsqlite3-dev \
+ && apt-get -q install -y libsqlcipher-dev \
+ && ln -sf /usr/lib/x86_64-linux-gnu/libsqlcipher.so /usr/lib/x86_64-linux-gnu/libsqlite3.so \
+ && ln -sf /usr/include/sqlcipher/sqlite3.h /usr/include/sqlite3.h \
+ && ln -sf /usr/include/sqlcipher/sqlite3ext.h /usr/include/sqlite3ext.h \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -39,12 +51,19 @@ RUN cp "$(swift build -c release --show-bin-path --package-path /build/Server)/A
 # =============================== Runtime stage ===============================
 FROM ubuntu:24.04
 
-# sqlite3 CLI: scripts/backup-db.sh runs `.backup` inside the container for
-# online, WAL-safe backups of the mounted database.
+# libsqlcipher1 is what the binary is linked against (see the build stage), and
+# must be aliased the same way so the dynamic loader finds it as libsqlite3.
+#
+# The `sqlcipher` CLI replaces the `sqlite3` one: scripts/backup-db.sh runs
+# `.backup` inside the container for online, WAL-safe backups, and an encrypted
+# database can only be opened by a client that understands PRAGMA key. It is
+# symlinked as `sqlite3` too so existing scripts and muscle memory keep working.
 RUN export DEBIAN_FRONTEND=noninteractive \
  && apt-get -q update \
  && apt-get -q install -y --no-install-recommends \
-      libsqlite3-0 sqlite3 ca-certificates tzdata curl \
+      libsqlcipher1 sqlcipher ca-certificates tzdata curl \
+ && ln -sf /usr/lib/x86_64-linux-gnu/libsqlcipher.so.1 /usr/lib/x86_64-linux-gnu/libsqlite3.so.0 \
+ && ln -sf /usr/bin/sqlcipher /usr/bin/sqlite3 \
  && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --user-group --create-home --system --skel /dev/null --home-dir /app vapor
