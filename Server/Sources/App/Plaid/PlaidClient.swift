@@ -51,13 +51,20 @@ struct PlaidClient: Sendable {
         }
     }
 
+    /// `redirectUri` is what makes OAuth banks work. Most large US institutions
+    /// (Chase, Wells Fargo, Capital One…) hand the user off to the bank's own
+    /// app or site to authenticate, and Plaid needs a registered universal link
+    /// to bring them back. Without it those institutions simply fail in Link
+    /// while smaller ones keep working — a confusing partial failure, which is
+    /// why this is wired up before it is needed rather than after.
     func createLinkToken(clientUserId: String, clientName: String,
-                         products: [String], webhook: String?) async throws -> PlaidLinkTokenCreateResponse {
+                         products: [String], webhook: String?,
+                         redirectUri: String? = nil) async throws -> PlaidLinkTokenCreateResponse {
         try await call("/link/token/create", PlaidLinkTokenCreateRequest(
             clientId: clientId, secret: secret, clientName: clientName,
             language: "en", countryCodes: ["US"],
             user: .init(clientUserId: clientUserId),
-            products: products, webhook: webhook))
+            products: products, webhook: webhook, redirectUri: redirectUri))
     }
 
     func exchangePublicToken(_ publicToken: String) async throws -> PlaidExchangeResponse {

@@ -14,6 +14,10 @@ struct PlaidLinkTokenCreateRequest: Encodable {
     let user: User
     let products: [String]
     let webhook: String?
+    /// Where the bank sends the user back after an OAuth handoff. Omitted
+    /// entirely when unset — Plaid rejects a redirect URI that isn't registered
+    /// for the environment, so an empty string here would break sandbox linking.
+    let redirectUri: String?
     struct User: Encodable { let clientUserId: String }
 }
 

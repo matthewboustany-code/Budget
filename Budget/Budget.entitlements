@@ -8,5 +8,18 @@
 	</array>
 	<key>aps-environment</key>
 	<string>development</string>
+	<!--
+	  Plaid OAuth. Large US banks hand the user off to their own app or site to
+	  authenticate, and Plaid brings them back via a universal link — a custom
+	  URL scheme is explicitly not accepted. That link is
+	  https://mbandhb.com/plaid-oauth, matched by the apple-app-site-association
+	  file served from that domain, and registered in the Plaid dashboard.
+	  Without this entitlement iOS opens the redirect in Safari instead of
+	  returning to the app, and the link flow dead-ends.
+	-->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:mbandhb.com</string>
+	</array>
 </dict>
 </plist>

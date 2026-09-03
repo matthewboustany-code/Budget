@@ -13,6 +13,12 @@ struct AppConfig: Sendable {
     var plaidWebhookURL: String?
     var plaidTokenEncKey: String
 
+    /// Universal link Plaid sends the user back to after an OAuth handoff to a
+    /// bank. Must be registered in the Plaid dashboard for this environment and
+    /// backed by an apple-app-site-association file, or Link rejects it. Left
+    /// unset in sandbox, where no OAuth institutions are exercised.
+    var plaidRedirectURI: String?
+
     /// SQLCipher passphrase for the database file. Required in production: the
     /// whole point is that a leaked volume or snapshot is not readable, and an
     /// optional-in-production setting is one that eventually isn't set.
@@ -72,6 +78,7 @@ struct AppConfig: Sendable {
                 .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) },
             plaidWebhookURL: Environment.get("PLAID_WEBHOOK_URL").flatMap { $0.isEmpty ? nil : $0 },
             plaidTokenEncKey: Environment.get("PLAID_TOKEN_ENC_KEY") ?? "",
+            plaidRedirectURI: Environment.get("PLAID_REDIRECT_URI")?.nilIfBlank,
             dbEncryptionKey: Environment.get("BUDGET_DB_ENCRYPTION_KEY")?.nilIfBlank,
             // Dev auth defaults ON outside production so local runs "just work".
             authDevMode: devModeRequested ?? (env != .production),

@@ -98,6 +98,42 @@ taken. It stores data in a named volume, so it needs none of the `chown` above.
 
 This stack has **no TLS** — keep it on the LAN, never port-forward it.
 
+## Going from Plaid sandbox to production
+
+The config change is small; the OAuth requirement is the part that bites.
+
+1. **Apply for production access** in the Plaid dashboard. Expect to supply
+   company details, the use case, expected volume, a security questionnaire,
+   and **publicly reachable Privacy Policy and Terms of Service URLs**.
+   Production is billed per Item per month.
+2. **Swap the credentials**: `PLAID_ENV=production` and the production
+   `PLAID_SECRET`. The client id does not change.
+3. **Re-link every account.** Sandbox access tokens are void in production, so
+   existing `plaid_items` rows are dead and each institution must be linked
+   again through the real Link flow.
+4. **Set `PLAID_REDIRECT_URI`** and register the identical URI in the Plaid
+   dashboard for Production. Without it, OAuth institutions — most large US
+   banks — fail while small ones succeed. The server logs a warning on every
+   link-token request if it is unset in production.
+
+The iOS side of OAuth is already wired up:
+
+- `Budget.entitlements` declares `applinks:mbandhb.com`.
+- The website's Caddy serves
+  `https://mbandhb.com/.well-known/apple-app-site-association` as
+  `application/json` with no redirect, mapping `/plaid-oauth*` to
+  `38S88ZF435.com.mbandhb.budget`, plus a fallback page at `/plaid-oauth` for
+  anyone opening the link without the app installed.
+- It is served from the Caddyfile rather than the site's `/srv` directory on
+  purpose: `/srv` is an Astro build checked out from git, so a file placed there
+  would be deleted by the next site deploy — and a universal link that vanishes
+  during an unrelated deploy is a nasty failure to trace.
+- Verify Apple can see it with:
+  `curl https://app-site-association.cdn-apple.com/a/v1/mbandhb.com`
+
+LinkKit 7.x handles the OAuth return itself once the universal link resolves —
+there is no `receivedRedirectUri` to pass and no URL handling needed in the app.
+
 ## Scheduled jobs (cron on the host)
 
 ```cron

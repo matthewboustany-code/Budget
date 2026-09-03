@@ -13,9 +13,19 @@ func registerPlaidRoutes(_ routes: RoutesBuilder) {
         _ = try await req.requireMembership()
         let user = try req.requireUser()
         let config = req.appConfig
+        // In production without a redirect URI, OAuth institutions — which is
+        // most large US banks — will fail while small ones succeed. Say so once
+        // per attempt rather than leaving it to be diagnosed from Link's UI.
+        if config.plaidEnv == "production" && config.plaidRedirectURI == nil {
+            req.logger.warning("""
+                PLAID_REDIRECT_URI is unset in production: OAuth institutions \
+                (Chase, Wells Fargo, Capital One, …) will fail to link.
+                """)
+        }
         let response = try await req.plaid.createLinkToken(
             clientUserId: user.id.uuidString, clientName: "Budget",
-            products: config.plaidProducts, webhook: config.plaidWebhookURL)
+            products: config.plaidProducts, webhook: config.plaidWebhookURL,
+            redirectUri: config.plaidRedirectURI)
         return LinkTokenResponse(linkToken: response.linkToken,
                                  expiration: response.expiration.flatMap(ISO8601DateFormatter().date(from:)))
     }
