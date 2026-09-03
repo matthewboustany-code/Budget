@@ -144,6 +144,10 @@ private struct InviteSheet: View {
                         .font(.headline)
                     Text(invite.code)
                         .font(.system(.largeTitle, design: .monospaced).bold())
+                        // The code is 18 characters now; keep it on one line
+                        // rather than letting it wrap mid-group.
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
                         .textSelection(.enabled)
                     ShareLink(item: "Join our Budget household with code \(invite.code)") {
                         Label("Share", systemImage: "square.and.arrow.up")

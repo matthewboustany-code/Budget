@@ -6,7 +6,11 @@ import BudgetModels
 /// Apple identity token (or a dev token when `AUTH_DEV_MODE` is on), upserts the
 /// user, and returns a session bearer token plus any existing household.
 func registerAuthRoutes(_ routes: RoutesBuilder) {
-    routes.post("auth", "apple") { req async throws -> AuthResponse in
+    // Rate limited per source address: this is the one unauthenticated way to
+    // mint a session, so it should not be a free, unlimited oracle either.
+    let limited = routes.grouped(RateLimitMiddleware(
+        rule: .init(limit: 30, window: 60 * 60), name: "auth-apple"))
+    limited.post("auth", "apple") { req async throws -> AuthResponse in
         let body = try req.content.decode(AppleSignInRequest.self)
         let config = req.appConfig
 

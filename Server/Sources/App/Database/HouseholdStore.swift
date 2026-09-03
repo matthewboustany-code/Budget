@@ -66,7 +66,7 @@ struct HouseholdStore {
         if try await membership(userID: userID) != nil {
             throw Abort(.conflict, reason: "You are already in a household.")
         }
-        let normalized = code.uppercased().trimmingCharacters(in: .whitespaces)
+        let normalized = Self.normalizeCode(code)
         return try await db.write { db in
             guard let inviteRow = try Row.fetchOne(
                 db, sql: "SELECT * FROM invite_codes WHERE code = ?", arguments: [normalized])
@@ -98,9 +98,12 @@ struct HouseholdStore {
         let code = Self.generateCode()
         let expiresAt = Date().addingTimeInterval(ttl)
         try await db.write { db in
+            // Stored normalized so lookups match however the partner types it.
             try db.execute(sql: "INSERT INTO invite_codes (code, household_id, expires_at) VALUES (?, ?, ?)",
-                           arguments: [code, householdID.uuidString, DBFormat.string(expiresAt)])
+                           arguments: [Self.normalizeCode(code), householdID.uuidString,
+                                       DBFormat.string(expiresAt)])
         }
+        // The dashed form is what we show the user.
         return InviteCode(code: code, householdID: householdID, expiresAt: expiresAt)
     }
 
@@ -115,11 +118,28 @@ struct HouseholdStore {
                         m.displayName, m.role.rawValue, m.colorHex, DBFormat.string(m.joinedAt)])
     }
 
-    /// "BUDGET-XXXXXX" using an unambiguous alphabet (no O/0/I/1).
-    private static func generateCode() -> String {
+    /// "BUDGET-XXXXX-XXXXX" using an unambiguous alphabet (no O/0/I/1).
+    ///
+    /// Ten characters over a 32-symbol alphabet is 2^50. The previous six
+    /// characters were only 2^30, which sounds large but is not: redeeming a
+    /// code grants full access to a household's finances, and an attacker
+    /// making 1000 guesses/sec would expect to land one in about six days.
+    /// Grouped with a dash purely so it can be read aloud; `normalizeCode`
+    /// strips the grouping, so either form can be typed.
+    static func generateCode() -> String {
         let alphabet = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
-        let suffix = String((0..<6).map { _ in alphabet.randomElement()! })
-        return "BUDGET-\(suffix)"
+        var rng = SystemRandomNumberGenerator()
+        let chars = (0..<10).map { _ in alphabet[Int.random(in: 0..<alphabet.count, using: &rng)] }
+        return "BUDGET-\(String(chars[0..<5]))-\(String(chars[5..<10]))"
+    }
+
+    /// Canonical form for storage and lookup: uppercase, no spaces, and with
+    /// the readability dashes removed so "budget-abcde-fghjk", "BUDGETABCDEFGHJK"
+    /// and the printed form all resolve to the same code.
+    static func normalizeCode(_ raw: String) -> String {
+        raw.uppercased()
+            .components(separatedBy: CharacterSet(charactersIn: "- \t"))
+            .joined()
     }
 }
 

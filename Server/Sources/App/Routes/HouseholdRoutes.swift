@@ -29,8 +29,12 @@ func registerHouseholdRoutes(_ routes: RoutesBuilder) {
         try await me(req)
     }
 
-    // POST /v1/household/join — redeem an invite code.
-    household.post("join") { req async throws -> MeResponse in
+    // POST /v1/household/join — redeem an invite code. Rate limited: a
+    // successful redemption exposes the household's whole financial history,
+    // so unlimited guessing must not be on the table.
+    let join = household.grouped(RateLimitMiddleware(
+        rule: .init(limit: 10, window: 60 * 60), name: "household-join"))
+    join.post("join") { req async throws -> MeResponse in
         let user = try req.requireUser()
         let body = try req.content.decode(JoinHouseholdRequest.self)
         _ = try await req.households.join(

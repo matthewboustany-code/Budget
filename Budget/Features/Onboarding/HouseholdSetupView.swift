@@ -38,7 +38,7 @@ struct HouseholdSetupView: View {
                     }
                 case .join:
                     Section("Invite code") {
-                        TextField("BUDGET-XXXXXX", text: $inviteCode)
+                        TextField("BUDGET-XXXXX-XXXXX", text: $inviteCode)
                             .textInputAutocapitalization(.characters)
                             .autocorrectionDisabled()
                     }
