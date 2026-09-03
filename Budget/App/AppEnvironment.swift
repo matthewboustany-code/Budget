@@ -18,6 +18,7 @@ final class AppEnvironment {
     let billsStore: BillsStore
     let goalsStore: GoalsStore
     let reportsStore: ReportsStore
+    let pushRegistrar: PushRegistrar
 
     /// Result of the last `/health` probe, shown in Settings.
     var connectionStatus: ConnectionStatus = .unknown
@@ -39,6 +40,7 @@ final class AppEnvironment {
         self.billsStore = BillsStore(api: api)
         self.goalsStore = GoalsStore(api: api)
         self.reportsStore = ReportsStore(api: api)
+        self.pushRegistrar = PushRegistrar(api: api)
     }
 
     /// On launch, if a session token exists, refresh identity + household from
@@ -59,6 +61,10 @@ final class AppEnvironment {
         if session.household != nil {
             await accountStore.load()
             await categoryStore.load()
+            // Only ask for notifications once the user is actually set up —
+            // prompting on the sign-in screen asks for a permission that has
+            // nothing to explain it yet.
+            await pushRegistrar.requestAuthorizationAndRegister()
         }
     }
 

@@ -36,6 +36,9 @@ public func configure(_ app: Application) async throws {
         app.logger.info("Database ready at \(dbPath)")
     }
 
+    // APNs for bill reminders. Optional: unconfigured means reminders log only.
+    await PushService.configure(app)
+
     // Scheduled jobs, run by cron (see scripts/). Never HTTP-triggered.
     app.asyncCommands.use(SyncAllItemsCommand(), as: "sync-all")
     app.asyncCommands.use(NetWorthSnapshotCommand(), as: "networth-snapshot")

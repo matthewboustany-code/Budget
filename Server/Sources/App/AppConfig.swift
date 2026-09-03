@@ -18,6 +18,26 @@ struct AppConfig: Sendable {
     /// simulator without an Apple Developer account. Never enable in production.
     var authDevMode: Bool
 
+    /// APNs credentials for bill reminders. Push is **optional**: with these
+    /// unset the server runs exactly as before and the reminder command just
+    /// logs, which is why none of them are required by `validate`. All four
+    /// must be present together for push to be considered configured.
+    var apnsKeyID: String? = nil
+    var apnsTeamID: String? = nil
+    /// The .p8 signing key's contents (not a path) so it can be injected as a
+    /// secret in compose without mounting a file.
+    var apnsKeyP8: String? = nil
+    /// The app's bundle id — APNs calls this the topic.
+    var apnsTopic: String? = nil
+    /// `production` sends to the real APNs host; anything else uses sandbox,
+    /// which is what a development-signed build registers against.
+    var apnsUseProduction: Bool = false
+
+    var apnsConfigured: Bool {
+        apnsKeyID?.isEmpty == false && apnsTeamID?.isEmpty == false
+            && apnsKeyP8?.isEmpty == false && apnsTopic?.isEmpty == false
+    }
+
     /// Refused at startup rather than discovered in an incident report.
     enum ConfigError: Error, CustomStringConvertible {
         case missingSecret(String)
@@ -38,7 +58,7 @@ struct AppConfig: Sendable {
             .map { $0 == "1" || $0.lowercased() == "true" }
 
         let config = AppConfig(
-            appleBundleID: Environment.get("APPLE_BUNDLE_ID") ?? "Me.Budget",
+            appleBundleID: Environment.get("APPLE_BUNDLE_ID") ?? "com.mbandhb.budget",
             sessionJWTSecret: Environment.get("SESSION_JWT_SECRET") ?? "dev-insecure-secret-change-me",
             plaidClientID: Environment.get("PLAID_CLIENT_ID") ?? "",
             plaidSecret: Environment.get("PLAID_SECRET") ?? "",
@@ -48,7 +68,16 @@ struct AppConfig: Sendable {
             plaidWebhookURL: Environment.get("PLAID_WEBHOOK_URL").flatMap { $0.isEmpty ? nil : $0 },
             plaidTokenEncKey: Environment.get("PLAID_TOKEN_ENC_KEY") ?? "",
             // Dev auth defaults ON outside production so local runs "just work".
-            authDevMode: devModeRequested ?? (env != .production)
+            authDevMode: devModeRequested ?? (env != .production),
+            apnsKeyID: Environment.get("APNS_KEY_ID")?.nilIfBlank,
+            apnsTeamID: Environment.get("APNS_TEAM_ID")?.nilIfBlank,
+            // Compose/env can't carry raw newlines, so an escaped-newline form
+            // is accepted and normalized here.
+            apnsKeyP8: Environment.get("APNS_KEY_P8")?.nilIfBlank?
+                .replacingOccurrences(of: "\\n", with: "\n"),
+            apnsTopic: Environment.get("APNS_TOPIC")?.nilIfBlank
+                ?? Environment.get("APPLE_BUNDLE_ID")?.nilIfBlank,
+            apnsUseProduction: (Environment.get("APNS_ENV") ?? "sandbox").lowercased() == "production"
         )
 
         try validate(config, env: env, devModeRequested: devModeRequested)
@@ -70,6 +99,12 @@ struct AppConfig: Sendable {
             || config.plaidTokenEncKey.hasPrefix("change-me") {
             throw ConfigError.missingSecret("PLAID_TOKEN_ENC_KEY")
         }
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : self
     }
 }
 

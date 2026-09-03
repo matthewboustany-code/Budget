@@ -63,7 +63,12 @@ struct HouseholdSetupView: View {
             .navigationTitle("Set up")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Sign out") { env.session.signOut() }
+                    Button("Sign out") {
+                        Task {
+                            await env.pushRegistrar.unregister()
+                            env.session.signOut()
+                        }
+                    }
                 }
             }
         }

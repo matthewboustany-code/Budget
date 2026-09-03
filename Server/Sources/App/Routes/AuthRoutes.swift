@@ -14,8 +14,14 @@ func registerAuthRoutes(_ routes: RoutesBuilder) {
         if config.authDevMode {
             identity = DevAppleTokenVerifier().verify(idToken: body.identityToken)
         } else {
-            identity = try await LiveAppleTokenVerifier(bundleID: config.appleBundleID)
-                .verify(idToken: body.identityToken, on: req)
+            do {
+                identity = try await LiveAppleTokenVerifier(bundleID: config.appleBundleID)
+                    .verify(idToken: body.identityToken, rawNonce: body.nonce, on: req)
+            } catch let error as AppleAuthError {
+                // Don't leak which half failed to a caller probing the endpoint.
+                req.logger.warning("Apple sign-in rejected: \(error)")
+                throw Abort(.unauthorized, reason: "Apple sign-in could not be verified.")
+            }
         }
 
         let displayName = body.fullName?.trimmingCharacters(in: .whitespaces).nilIfEmpty

@@ -18,4 +18,5 @@ func routes(_ app: Application) throws {
     registerRecurringRoutes(v1)
     registerGoalRoutes(v1)
     registerReportRoutes(v1)
+    registerDeviceRoutes(v1)
 }

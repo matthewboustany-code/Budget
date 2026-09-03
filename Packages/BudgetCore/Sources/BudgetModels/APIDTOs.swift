@@ -10,11 +10,18 @@ public struct AppleSignInRequest: Codable, Sendable {
     /// Apple provides the name only on the very first sign-in; the app forwards
     /// it so we can seed `displayName`.
     public var fullName: String?
+    /// The raw (unhashed) nonce the app generated for this sign-in. Apple
+    /// echoes its SHA-256 into the identity token's `nonce` claim; the server
+    /// re-hashes this and compares, which is what stops a stolen token from
+    /// being replayed. Optional only so dev-mode sign-in can omit it.
+    public var nonce: String?
 
-    public init(identityToken: String, authorizationCode: String? = nil, fullName: String? = nil) {
+    public init(identityToken: String, authorizationCode: String? = nil,
+                fullName: String? = nil, nonce: String? = nil) {
         self.identityToken = identityToken
         self.authorizationCode = authorizationCode
         self.fullName = fullName
+        self.nonce = nonce
     }
 }
 
@@ -405,5 +412,18 @@ public struct APIErrorResponse: Codable, Sendable, Error {
     public init(error: Bool = true, reason: String) {
         self.error = error
         self.reason = reason
+    }
+}
+
+/// Registers this device for bill-reminder pushes. `environment` says which
+/// APNs host minted the token ("sandbox" for development-signed builds,
+/// "production" for TestFlight/App Store) — the two are not interchangeable.
+public struct RegisterDeviceRequest: Codable, Sendable {
+    public var token: String
+    public var environment: String
+
+    public init(token: String, environment: String) {
+        self.token = token
+        self.environment = environment
     }
 }

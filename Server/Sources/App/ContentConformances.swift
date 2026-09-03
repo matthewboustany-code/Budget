@@ -7,6 +7,7 @@ import BudgetModels
 /// Vapor supplies the encode/decode implementations for any `Codable` type.
 
 extension AppleSignInRequest: @retroactive Content {}
+extension RegisterDeviceRequest: @retroactive Content {}
 extension AuthResponse: @retroactive Content {}
 extension MeResponse: @retroactive Content {}
 extension CreateHouseholdRequest: @retroactive Content {}

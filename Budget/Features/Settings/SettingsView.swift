@@ -45,7 +45,12 @@ struct SettingsView: View {
 
             Section {
                 Button("Sign out", role: .destructive) {
-                    env.session.signOut()
+                    Task {
+                        // Deregister first: the DELETE needs the bearer token
+                        // that signOut() is about to discard.
+                        await env.pushRegistrar.unregister()
+                        env.session.signOut()
+                    }
                 }
             }
         }

@@ -37,7 +37,8 @@ Edit `.env`:
 | `PLAID_TOKEN_ENC_KEY` | `openssl rand -hex 32` (rotating it orphans stored Plaid tokens — relink) |
 | `PLAID_CLIENT_ID` / `PLAID_SECRET` / `PLAID_ENV` | from the Plaid dashboard |
 | `PLAID_WEBHOOK_URL` | `https://<BUDGET_DOMAIN>/v1/plaid/webhook` |
-| `APPLE_BUNDLE_ID` | the app's bundle id (`Me.Budget`) |
+| `APPLE_BUNDLE_ID` | the app's bundle id (`com.mbandhb.budget`) |
+| `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_KEY_P8` / `APNS_ENV` | optional — bill-reminder push. Leave blank to keep reminders log-only |
 | `BUDGET_DOMAIN` | your DNS name |
 | `BUDGET_DATA_DIR` | where the database should live on the host (default `./data`) |
 

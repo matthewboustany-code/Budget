@@ -16,7 +16,7 @@ struct HardeningTests {
 
     private func config(jwtSecret: String = String(repeating: "a", count: 40),
                         encKey: String = "3fb2…realish-key") -> AppConfig {
-        AppConfig(appleBundleID: "Me.Budget", sessionJWTSecret: jwtSecret,
+        AppConfig(appleBundleID: "com.mbandhb.budget", sessionJWTSecret: jwtSecret,
                   plaidClientID: "id", plaidSecret: "secret", plaidEnv: "production",
                   plaidProducts: ["transactions"], plaidWebhookURL: nil,
                   plaidTokenEncKey: encKey, authDevMode: false)
@@ -137,5 +137,32 @@ struct HardeningTests {
         await #expect(throws: PlaidWebhookVerifier.VerifyError.wrongAlgorithm) {
             try await signer.verifier.verify(token: forged, rawBody: Data())
         }
+    }
+}
+
+@Suite("Apple sign-in nonce")
+struct AppleNonceTests {
+    // Known-answer: SHA-256("hello") — proves we hash the raw nonce the app
+    // sent, in the lowercase hex form Apple puts in the `nonce` claim.
+    @Test("A matching nonce verifies")
+    func matchingNonce() {
+        let claim = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        #expect(LiveAppleTokenVerifier.nonceMatches(rawNonce: "hello", claim: claim))
+    }
+
+    @Test("A replayed token carrying someone else's nonce is rejected")
+    func mismatchedNonce() {
+        let claim = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        #expect(!LiveAppleTokenVerifier.nonceMatches(rawNonce: "goodbye", claim: claim))
+    }
+
+    @Test("A token with no nonce claim is rejected")
+    func absentNonce() {
+        #expect(!LiveAppleTokenVerifier.nonceMatches(rawNonce: "hello", claim: nil))
+    }
+
+    @Test("A truncated nonce claim is rejected")
+    func truncatedNonce() {
+        #expect(!LiveAppleTokenVerifier.nonceMatches(rawNonce: "hello", claim: "2cf24dba"))
     }
 }

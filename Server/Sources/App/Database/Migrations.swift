@@ -226,6 +226,22 @@ extension AppDatabase {
             try db.execute(sql: "CREATE INDEX idx_recurring_household_key ON recurring_series(household_id, merchant_key)")
         }
 
+        // Device tokens for APNs bill reminders. Keyed by the token itself so a
+        // reinstall that reissues the same token updates the row rather than
+        // accumulating duplicates, and ON DELETE CASCADE means a removed user
+        // can't leave a token behind that we'd keep pushing to.
+        migrator.registerMigration("v3_device_tokens") { db in
+            try db.execute(sql: """
+                CREATE TABLE device_tokens (
+                    token TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    environment TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX idx_device_tokens_user ON device_tokens(user_id);
+                """)
+        }
+
         return migrator
     }
 }

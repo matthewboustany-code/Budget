@@ -18,14 +18,15 @@ final class AuthStore {
         self.session = session
     }
 
-    func signInWithApple(identityToken: String, fullName: String?) async {
+    func signInWithApple(identityToken: String, fullName: String?, nonce: String?) async {
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
         do {
             let response: AuthResponse = try await api.post(
                 "v1/auth/apple",
-                body: AppleSignInRequest(identityToken: identityToken, fullName: fullName))
+                body: AppleSignInRequest(identityToken: identityToken, fullName: fullName,
+                                         nonce: nonce))
             session.apply(response)
         } catch {
             errorMessage = (error as? APIClientError)?.errorDescription ?? error.localizedDescription
@@ -37,7 +38,8 @@ final class AuthStore {
     /// (the server must have AUTH_DEV_MODE on). Two names → two distinct users,
     /// so the couples flow can be tested on one machine.
     func devSignIn(as name: String) async {
-        await signInWithApple(identityToken: "dev:\(name.lowercased())", fullName: name)
+        // No nonce: the server's dev verifier never inspects the token.
+        await signInWithApple(identityToken: "dev:\(name.lowercased())", fullName: name, nonce: nil)
     }
     #endif
 }

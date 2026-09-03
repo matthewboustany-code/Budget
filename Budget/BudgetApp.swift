@@ -6,9 +6,11 @@
 //
 
 import SwiftUI
+import UIKit
 
 @main
 struct BudgetApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var environment = AppEnvironment()
 
     var body: some Scene {
@@ -16,6 +18,25 @@ struct BudgetApp: App {
             RootView()
                 .environment(environment)
         }
+    }
+}
+
+/// SwiftUI has no scene-level hook for the APNs token callbacks, so this
+/// minimal delegate exists solely to forward them. It republishes the token as
+/// a notification rather than reaching for the environment, which keeps the
+/// delegate free of app state and lets `PushRegistrar` stay injectable.
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NotificationCenter.default.post(name: PushRegistrar.didReceiveTokenNotification,
+                                        object: deviceToken)
+    }
+
+    func application(_ application: UIApplication,
+                     didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        // Expected on the Simulator and when the device is offline. Reminders
+        // are a convenience; the next launch retries.
+        print("APNs registration failed: \(error.localizedDescription)")
     }
 }
 
