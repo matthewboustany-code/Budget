@@ -1,0 +1,50 @@
+# Public stack: the Vapor API published through an existing Cloudflare Tunnel.
+#
+# Chosen over docker-compose.yml (bundled Caddy + Let's Encrypt) when the host
+# already runs a `cloudflared` daemon, because the tunnel gives us a public
+# hostname and TLS with no open inbound ports at all — the origin is reachable
+# only through Cloudflare, never directly from the internet.
+#
+# Deliberately publishes NO host port. Everything reaches the API over the
+# tunnel network, so there is no way to bypass Cloudflare (and therefore no way
+# to bypass its TLS or its view of the client IP, which the rate limiter reads
+# from CF-Connecting-IP).
+#
+# Requires, on the host:
+#   1. An ingress entry in the cloudflared config pointing the hostname at
+#      http://budget-server:8080, placed ABOVE the catch-all 404.
+#   2. A proxied CNAME for that hostname -> <tunnel-uuid>.cfargotunnel.com.
+#   3. The tunnel's docker network, named below, to already exist.
+#
+#   docker compose -f docker-compose.tunnel.yml up -d --build
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: Server/Dockerfile
+    image: budget-server
+    container_name: budget-server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      BUDGET_DB_PATH: /data/budget.sqlite
+      LOG_LEVEL: "${BUDGET_LOG_LEVEL:-info}"
+    volumes:
+      # Named volume: Docker seeds its ownership from the image, so it works as
+      # the image's `vapor` user (uid 999). A bind mount would be owned by the
+      # deploying user and the server would die with "SQLite error 14".
+      - budget_data:/data
+    networks:
+      - tunnel
+
+volumes:
+  budget_data:
+
+networks:
+  # The network the cloudflared container is already attached to; cloudflared
+  # resolves this service by its container name on it. External because the
+  # tunnel stack owns its lifecycle, not this file.
+  tunnel:
+    external: true
+    name: "${BUDGET_TUNNEL_NETWORK:-website_public}"
