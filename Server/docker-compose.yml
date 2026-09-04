@@ -31,6 +31,15 @@ services:
       LOG_LEVEL: "${BUDGET_LOG_LEVEL:-info}"
     volumes:
       - "${BUDGET_DATA_DIR:-./data}:/data"
+    # Bounded logs. Docker's json-file driver defaults to unlimited, and these
+    # logs carry request paths and identifiers ("Deleted account <uuid>"), so
+    # without a cap they are an ever-growing store of personal data that no
+    # retention policy covers — and eventually a full disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     expose:
       - "8080"
 

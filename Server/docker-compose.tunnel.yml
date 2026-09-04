@@ -35,6 +35,15 @@ services:
       # the image's `vapor` user (uid 999). A bind mount would be owned by the
       # deploying user and the server would die with "SQLite error 14".
       - budget_data:/data
+    # Bounded logs. Docker's json-file driver defaults to unlimited, and these
+    # logs carry request paths and identifiers ("Deleted account <uuid>"), so
+    # without a cap they are an ever-growing store of personal data that no
+    # retention policy covers — and eventually a full disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - tunnel
 

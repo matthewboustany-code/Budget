@@ -32,6 +32,15 @@ services:
       # instead, and the server dies with "SQLite error 14: unable to open
       # database file" until it is chown'd to 999:999.
       - budget_data:/data
+    # Bounded logs. Docker's json-file driver defaults to unlimited, and these
+    # logs carry request paths and identifiers ("Deleted account <uuid>"), so
+    # without a cap they are an ever-growing store of personal data that no
+    # retention policy covers — and eventually a full disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       # Host port is configurable because 8080 is a popular default and may
       # already be taken by another service on the same box.
