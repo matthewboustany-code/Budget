@@ -36,8 +36,18 @@ echo "==> Disabling SSH password authentication and root login"
 # file cannot silently revert this.
 $SUDO tee /etc/ssh/sshd_config.d/10-budget-hardening.conf >/dev/null <<'CONF'
 # Managed by Server/scripts/harden-host.sh — see docs/security/access-control-policy.md
-# Key-only access. Password auth on an internet-adjacent host holding financial
-# data is a standing invitation to credential stuffing.
+# Key-only access.
+#
+# Scope, honestly: SSH here is LAN-only — the Cloudflare tunnel routes only
+# named hostnames to containers and nothing publishes port 22 — so this is not
+# defending against the internet. It removes password guessing from whatever is
+# already on the local network: a guest device, an IoT box, a compromised
+# laptop. Cheap, but not the dramatic win it is often sold as.
+#
+# The control that actually matters on this host is the private key itself.
+# Anyone holding it gets this account, which is in the docker group (root
+# equivalent) and can read Server/.env — the database encryption key included.
+# Keep that key passphrase-protected.
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 ChallengeResponseAuthentication no

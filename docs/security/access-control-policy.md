@@ -48,7 +48,8 @@ of the above. There are no service accounts belonging to outside parties.
 
 - **SSH is key-only.** Password authentication is disabled on the VM, and root
   login over SSH is disabled. Access requires possession of the operator's
-  private key.
+  private key, which is passphrase-protected. SSH is not reachable from the
+  internet — it listens on the local network only.
 - **The hypervisor requires MFA.** Proxmox is configured with TOTP in addition
   to the account password.
 - **Administrative interfaces are not exposed to the internet.** Proxmox,
@@ -160,3 +161,7 @@ Recorded deliberately, because a policy that only lists strengths is not useful:
 - There is no separation of duties and no second reviewer, because there is one
   operator.
 - There is no centralized identity provider or SIEM.
+- The operator's account is in the `docker` group, which is equivalent to root
+  on that host: `sudo` requiring a password does not constrain it. The SSH
+  private key is therefore the real boundary for the whole system, and its
+  passphrase is the control that protects it.
