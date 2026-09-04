@@ -30,6 +30,33 @@ final class AccountStore {
         }
     }
 
+    /// Linked institutions the signed-in member owns, for the disconnect UI.
+    var connections: [LinkedInstitution] = []
+
+    func loadConnections() async {
+        do {
+            connections = try await api.get("v1/plaid/items")
+            errorMessage = nil
+        } catch {
+            errorMessage = friendly(error)
+        }
+    }
+
+    /// Disconnects an institution: Plaid forgets the Item, and its accounts and
+    /// transactions go with it.
+    func disconnect(_ connection: LinkedInstitution) async -> Bool {
+        do {
+            try await api.delete("v1/plaid/items/\(connection.id)")
+            connections.removeAll { $0.id == connection.id }
+            await load()
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = friendly(error)
+            return false
+        }
+    }
+
     /// Fetch a Plaid Link token to open Link on the device.
     func fetchLinkToken() async -> String? {
         do {

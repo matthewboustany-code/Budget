@@ -125,3 +125,8 @@ struct PlaidErrorResponse: Decodable {
     let errorMessage: String?
     let displayMessage: String?
 }
+
+/// `/item/remove` returns only a request id; the removal is the point.
+struct PlaidItemRemoveResponse: Decodable {
+    let requestId: String?
+}

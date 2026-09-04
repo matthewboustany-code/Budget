@@ -36,10 +36,39 @@ struct MockPlaidTransport: PlaidTransport {
                "personal_finance_category":{"primary":"ENTERTAINMENT","detailed":"ENTERTAINMENT_STREAMING"}}
             ],"modified":[],"removed":[],"next_cursor":"cursor-1","has_more":false}
             """
+        case "/item/remove":
+            body = #"{"request_id":"req_removed"}"#
         default:
             return (Data("{}".utf8), 404)
         }
         return (Data(body.utf8), 200)
+    }
+}
+
+/// Records which Plaid endpoints were hit, so deletion tests can assert that
+/// the Item was actually disconnected rather than just dropped locally.
+actor RecordingPlaidTransport: PlaidTransport {
+    private(set) var calls: [String] = []
+    private let inner = MockPlaidTransport()
+    /// When true, /item/remove fails — standing in for Plaid being down.
+    var failRemoval = false
+
+    init(failRemoval: Bool = false) { self.failRemoval = failRemoval }
+
+    private var exchanges = 0
+
+    func post(url: URL, json: Data) async throws -> (data: Data, status: Int) {
+        calls.append(url.path)
+        if url.path == "/item/remove" && failRemoval {
+            return (Data(#"{"error_code":"ITEM_NOT_FOUND"}"#.utf8), 400)
+        }
+        // plaid_item_id is UNIQUE, so a fixed id would make the second link in
+        // a test collide rather than exercise what the test is about.
+        if url.path == "/item/public_token/exchange" {
+            exchanges += 1
+            return (Data(#"{"access_token":"access-sandbox-\#(exchanges)","item_id":"item-\#(exchanges)"}"#.utf8), 200)
+        }
+        return try await inner.post(url: url, json: json)
     }
 }
 

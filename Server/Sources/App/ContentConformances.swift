@@ -18,6 +18,7 @@ extension InviteResponse: @retroactive Content {}
 extension Account: @retroactive Content {}
 extension LinkTokenResponse: @retroactive Content {}
 extension ExchangePublicTokenRequest: @retroactive Content {}
+extension LinkedInstitution: @retroactive Content {}
 extension SandboxLinkRequest: @retroactive Content {}
 extension UpdateAccountRequest: @retroactive Content {}
 extension NetWorthResponse: @retroactive Content {}

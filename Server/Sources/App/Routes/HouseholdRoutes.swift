@@ -44,6 +44,18 @@ func registerHouseholdRoutes(_ routes: RoutesBuilder) {
         return try await me(req)
     }
 
+    // DELETE /v1/me — delete the caller's account and data.
+    //
+    // Required by Plaid's data-rights expectations and by App Store rules for
+    // any app offering account creation. Disconnects their institutions at
+    // Plaid before anything local is removed.
+    authed.delete("me") { req async throws -> HTTPStatus in
+        let user = try req.requireUser()
+        try await req.deletion.deleteUser(user)
+        req.logger.info("Deleted account \(user.id)")
+        return .noContent
+    }
+
     // POST /v1/household/invite — a single-use code for the partner.
     household.post("invite") { req async throws -> InviteResponse in
         let user = try req.requireUser()

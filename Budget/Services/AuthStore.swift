@@ -18,6 +18,26 @@ final class AuthStore {
         self.session = session
     }
 
+    /// Permanently deletes the signed-in account: linked institutions are
+    /// disconnected at Plaid, and the local data goes with them. If this was
+    /// the last member, the whole household is erased.
+    ///
+    /// Signs out on success — the session belongs to a user that no longer
+    /// exists, and every subsequent request would 401 anyway.
+    func deleteAccount() async -> Bool {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            try await api.delete("v1/me")
+            session.signOut()
+            return true
+        } catch {
+            errorMessage = (error as? APIClientError)?.errorDescription ?? error.localizedDescription
+            return false
+        }
+    }
+
     func signInWithApple(identityToken: String, fullName: String?, nonce: String?) async {
         isWorking = true
         errorMessage = nil

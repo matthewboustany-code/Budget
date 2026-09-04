@@ -92,6 +92,18 @@ struct PlaidClient: Sendable {
             clientId: clientId, secret: secret, accessToken: accessToken))
     }
 
+    /// Tells Plaid to forget the Item. Must be called before the local row is
+    /// deleted, because the access token goes with it — and an Item we can no
+    /// longer address is one Plaid keeps (and keeps billing for) forever, with
+    /// the bank connection still live on the user's behalf. Deleting our copy
+    /// of someone's financial data while quietly leaving the pipe open would be
+    /// the worst possible reading of "delete my account".
+    @discardableResult
+    func removeItem(accessToken: String) async throws -> PlaidItemRemoveResponse {
+        try await call("/item/remove", PlaidAccessTokenRequest(
+            clientId: clientId, secret: secret, accessToken: accessToken))
+    }
+
     func transactionsSync(accessToken: String, cursor: String?) async throws -> PlaidTransactionsSyncResponse {
         try await call("/transactions/sync", PlaidTransactionsSyncRequest(
             clientId: clientId, secret: secret, accessToken: accessToken, cursor: cursor, count: 500))

@@ -30,3 +30,7 @@ build/
 
 # Server runtime
 Server/logs/
+
+# Rendered legal pages — build/ output from scripts/build-legal-pages.py.
+# The markdown in docs/legal/ is the source of truth.
+build/

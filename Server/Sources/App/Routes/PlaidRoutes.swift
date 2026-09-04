@@ -41,6 +41,33 @@ func registerPlaidRoutes(_ routes: RoutesBuilder) {
         return accounts
     }
 
+    // GET /v1/plaid/items — the caller's linked institutions, for the
+    // disconnect UI. Scoped to what they own: you can only unlink your own.
+    plaid.get("items") { req async throws -> [LinkedInstitution] in
+        let (_, member) = try await req.requireMembership()
+        return try await req.plaidItems.forMember(member.id).map {
+            LinkedInstitution(id: $0.id, institutionName: $0.institutionName)
+        }
+    }
+
+    // DELETE /v1/plaid/items/:id — disconnect one institution. Removes the Item
+    // at Plaid first, then deletes it locally along with its accounts and
+    // transactions.
+    plaid.delete("items", ":id") { req async throws -> HTTPStatus in
+        let (_, member) = try await req.requireMembership()
+        guard let id = req.parameters.get("id").flatMap({ UUID(uuidString: $0) }) else {
+            throw Abort(.badRequest, reason: "Invalid item id")
+        }
+        // Owner-only, and a 404 rather than a 403 so this can't be used to
+        // probe for items belonging to anyone else.
+        guard let item = try await req.plaidItems.find(id: id),
+              item.ownerMemberID == member.id else {
+            throw Abort(.notFound, reason: "Connection not found")
+        }
+        try await req.deletion.unlinkItem(item)
+        return .noContent
+    }
+
     // POST /v1/plaid/sandbox-link — dev-only: link a sandbox institution with no UI.
     plaid.post("sandbox-link") { req async throws -> [Account] in
         guard req.appConfig.authDevMode else {

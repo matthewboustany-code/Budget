@@ -71,10 +71,37 @@ struct PlaidItemStore {
         }
     }
 
+    /// Items owned by one member — the set to disconnect from Plaid when that
+    /// person deletes their account.
+    func forMember(_ memberID: UUID) async throws -> [PlaidItemRecord] {
+        try await db.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM plaid_items WHERE owner_member_id = ?",
+                             arguments: [memberID.uuidString]).map(PlaidItemRecord.init(row:))
+        }
+    }
+
+    func find(id: UUID) async throws -> PlaidItemRecord? {
+        try await db.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM plaid_items WHERE id = ?",
+                             arguments: [id.uuidString]).map(PlaidItemRecord.init(row:))
+        }
+    }
+
+    /// Deletes the row. `accounts` (and through them `transactions`) cascade.
+    func delete(id: UUID) async throws {
+        try await db.write { db in
+            try db.execute(sql: "DELETE FROM plaid_items WHERE id = ?", arguments: [id.uuidString])
+        }
+    }
+
     func updateCursor(id: UUID, cursor: String) async throws {
         try await db.write { db in
             try db.execute(sql: "UPDATE plaid_items SET transactions_cursor = ? WHERE id = ?",
                            arguments: [cursor, id.uuidString])
         }
     }
+}
+
+extension Request {
+    var plaidItems: PlaidItemStore { PlaidItemStore(db: appDatabase.dbPool) }
 }

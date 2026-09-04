@@ -1,11 +1,15 @@
 import SwiftUI
 import BudgetModels
 
-/// Household members, the partner-invite flow, backend status, and sign-out.
+/// Household members, the partner-invite flow, connected institutions, backend
+/// status, sign-out, and account deletion.
 struct SettingsView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var showInvite = false
     @State private var showServerEditor = false
+    @State private var connectionToDisconnect: LinkedInstitution?
+    @State private var showDeleteAccount = false
+    @State private var deleteFailed: String?
 
     var body: some View {
         List {
@@ -57,6 +61,36 @@ struct SettingsView: View {
                 }
             }
 
+            Section("About") {
+                Link(destination: URL(string: "https://mbandhb.com/privacy")!) {
+                    LabeledContent("Privacy policy") {
+                        Image(systemName: "arrow.up.right.square")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .tint(.primary)
+            }
+
+            if !env.accountStore.connections.isEmpty {
+                Section {
+                    ForEach(env.accountStore.connections) { connection in
+                        HStack {
+                            Text(connection.displayName)
+                            Spacer()
+                            Button("Disconnect") { connectionToDisconnect = connection }
+                                .buttonStyle(.borderless)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                } header: {
+                    Text("Connected accounts")
+                } footer: {
+                    Text("Disconnecting tells your bank's provider to drop the "
+                         + "connection and removes those accounts and their "
+                         + "transactions from Budget.")
+                }
+            }
+
             Section {
                 Button("Sign out", role: .destructive) {
                     Task {
@@ -66,10 +100,59 @@ struct SettingsView: View {
                         env.session.signOut()
                     }
                 }
+                Button("Delete account", role: .destructive) {
+                    showDeleteAccount = true
+                }
+            } footer: {
+                Text("Deleting your account disconnects your banks and erases "
+                     + "your data. If you're the last person in the household, "
+                     + "the household is deleted too. This can't be undone.")
             }
         }
         .navigationTitle("Settings")
-        .task { await env.checkConnection() }
+        .task {
+            await env.checkConnection()
+            await env.accountStore.loadConnections()
+        }
+        .confirmationDialog(
+            "Disconnect \(connectionToDisconnect?.displayName ?? "")?",
+            isPresented: .init(get: { connectionToDisconnect != nil },
+                               set: { if !$0 { connectionToDisconnect = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Disconnect", role: .destructive) {
+                guard let connection = connectionToDisconnect else { return }
+                connectionToDisconnect = nil
+                Task { _ = await env.accountStore.disconnect(connection) }
+            }
+            Button("Cancel", role: .cancel) { connectionToDisconnect = nil }
+        } message: {
+            Text("Its accounts and transactions will be removed from Budget.")
+        }
+        .alert("Delete your account?", isPresented: $showDeleteAccount) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    // Drop the push token first: the DELETE needs the bearer
+                    // token that a successful deletion discards.
+                    await env.pushRegistrar.unregister()
+                    if !(await env.authStore.deleteAccount()) {
+                        deleteFailed = env.authStore.errorMessage
+                            ?? "Something went wrong. Please try again."
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This disconnects your banks and permanently erases your "
+                 + "accounts, transactions, budgets, and goals. It can't be undone.")
+        }
+        .alert("Couldn't delete your account",
+               isPresented: .init(get: { deleteFailed != nil },
+                                  set: { if !$0 { deleteFailed = nil } })) {
+            Button("OK", role: .cancel) { deleteFailed = nil }
+        } message: {
+            Text(deleteFailed ?? "")
+        }
         .sheet(isPresented: $showInvite) {
             InviteSheet()
         }

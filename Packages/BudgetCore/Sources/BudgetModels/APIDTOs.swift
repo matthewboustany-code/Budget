@@ -427,3 +427,16 @@ public struct RegisterDeviceRequest: Codable, Sendable {
         self.environment = environment
     }
 }
+
+/// One linked institution, for the disconnect UI in Settings.
+public struct LinkedInstitution: Codable, Identifiable, Sendable, Hashable {
+    public let id: UUID
+    public let institutionName: String?
+
+    public init(id: UUID, institutionName: String?) {
+        self.id = id
+        self.institutionName = institutionName
+    }
+
+    public var displayName: String { institutionName ?? "Connected account" }
+}
