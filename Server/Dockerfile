@@ -22,7 +22,7 @@ FROM swift:6.1-noble AS build
 # rather than writing financial data in the clear.
 RUN export DEBIAN_FRONTEND=noninteractive \
  && apt-get -q update \
- && apt-get -q install -y libsqlcipher-dev \
+ && apt-get -q install -y --no-install-recommends libsqlcipher-dev \
  && ln -sf /usr/lib/x86_64-linux-gnu/libsqlcipher.so /usr/lib/x86_64-linux-gnu/libsqlite3.so \
  && ln -sf /usr/include/sqlcipher/sqlite3.h /usr/include/sqlite3.h \
  && ln -sf /usr/include/sqlcipher/sqlite3ext.h /usr/include/sqlite3ext.h \
