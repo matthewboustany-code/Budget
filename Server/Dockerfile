@@ -8,7 +8,7 @@
 # (docker-compose.yml sets this context for you.)
 
 # ================================ Build stage ================================
-FROM swift:6.1-noble AS build
+FROM swift:6.3-noble AS build
 
 # GRDB links the system SQLite on Linux, so we give it SQLCipher instead of
 # stock SQLite. SQLCipher is a fork of SQLite with the same API and ABI plus
