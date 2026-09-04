@@ -49,7 +49,7 @@ RUN cp "$(swift build -c release --show-bin-path --package-path /build/Server)/A
     fi
 
 # =============================== Runtime stage ===============================
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 # libsqlcipher1 is what the binary is linked against (see the build stage), and
 # must be aliased the same way so the dynamic loader finds it as libsqlite3.
