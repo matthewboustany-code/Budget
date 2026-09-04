@@ -17,8 +17,11 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "docs", "legal")
-OUT = os.path.join(ROOT, "build", "legal")
+# Both the consumer-facing policy and the internal ones: the same rendering
+# serves the hosted page and the PDFs attached to compliance reviews.
+SRC_DIRS = [("legal", os.path.join(ROOT, "docs", "legal")),
+            ("security", os.path.join(ROOT, "docs", "security"))]
+OUT_ROOT = os.path.join(ROOT, "build")
 
 STYLE = """
 :root {
@@ -41,7 +44,7 @@ h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .5rem; letter-spacing: -0.
 h2 { font-size: 1.2rem; margin: 2.5rem 0 .75rem; padding-top: 1.25rem;
      border-top: 1px solid var(--rule); letter-spacing: -0.01em; }
 p, li { margin: 0 0 1rem; }
-ul { padding-left: 1.25rem; }
+ul, ol { padding-left: 1.35rem; }
 li { margin-bottom: .4rem; }
 a { color: var(--link); }
 strong { font-weight: 650; }
@@ -49,6 +52,24 @@ strong { font-weight: 650; }
 .meta p { margin: 0; }
 footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--rule);
          color: var(--muted); font-size: .9rem; }
+table { border-collapse: collapse; width: 100%; margin: 0 0 1.25rem; font-size: .95rem; }
+th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--rule);
+         vertical-align: top; }
+th { font-weight: 650; }
+.wrap { overflow-x: auto; }
+
+@media print {
+  /* Force the light palette: a dark page wastes toner and reads badly on
+     paper, and reviewers print these. */
+  :root { --bg: #fff; --fg: #000; --muted: #444; --rule: #bbb; --link: #000; }
+  body { font-size: 10.5pt; }
+  main { max-width: none; padding: 0; }
+  h2 { page-break-after: avoid; }
+  tr, li, table { page-break-inside: avoid; }
+  footer { page-break-before: avoid; }
+  a { text-decoration: none; }
+}
+@page { margin: 18mm 16mm; }
 """
 
 
@@ -61,38 +82,122 @@ def inline(text):
     return text
 
 
+def is_divider(line):
+    """The |---|---| row under a markdown table header."""
+    return bool(re.fullmatch(r"\|[\s:|-]+\|", line.strip()))
+
+
+def cells(line):
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
 def render(md):
-    out, in_list, meta_done = [], False, False
+    """Markdown subset -> HTML.
+
+    The source is hard-wrapped at 80 columns for reviewable diffs, so
+    consecutive non-blank lines are one paragraph and must be joined. Emitting
+    a <p> per source line — as an earlier version did — turns every document
+    into a column of sentence fragments.
+    """
+    out, meta_done = [], False
+    lines = md.split("\n")
+    i = 0
+    para: list[str] = []
+    list_tag = None   # "ul" | "ol" | None
+    item: list[str] = []
+
+    def flush_para():
+        nonlocal para, meta_done
+        if not para:
+            return
+        # The owner/effective-date block sits between the h1 and the first h2.
+        # Those are discrete fields, one per line, so they keep their line
+        # breaks instead of being reflowed into one run-on sentence the way an
+        # ordinary paragraph is.
+        is_meta = not meta_done and para[0].startswith("**")
+        text = ("<br>" if is_meta else " ").join(
+            inline(line) for line in para)
+        cls = ' class="meta"' if is_meta else ""
+        out.append(f"<p{cls}>{text}</p>")
+        para = []
+
+    def flush_item():
+        nonlocal item
+        if item:
+            out.append(f"<li>{inline(' '.join(item))}</li>")
+            item = []
 
     def close_list():
-        nonlocal in_list
-        if in_list:
-            out.append("</ul>")
-            in_list = False
+        nonlocal list_tag
+        flush_item()
+        if list_tag:
+            out.append(f"</{list_tag}>")
+            list_tag = None
 
-    for raw in md.split("\n"):
+    def open_list(tag):
+        nonlocal list_tag
+        if list_tag != tag:
+            close_list()
+            out.append(f"<{tag}>")
+            list_tag = tag
+
+    while i < len(lines):
+        raw = lines[i]
         line = raw.rstrip()
-        if not line:
-            close_list()
+
+        # Table: header row, divider, then body rows.
+        if line.startswith("|") and i + 1 < len(lines) and is_divider(lines[i + 1]):
+            flush_para(); close_list()
+            out.append('<div class="wrap"><table><thead><tr>')
+            out += [f"<th>{inline(c)}</th>" for c in cells(line)]
+            out.append("</tr></thead><tbody>")
+            i += 2
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                out.append("<tr>")
+                out += [f"<td>{inline(c)}</td>" for c in cells(lines[i])]
+                out.append("</tr>")
+                i += 1
+            out.append("</tbody></table></div>")
             continue
+
+        i += 1
+
+        if not line.strip():
+            flush_para(); close_list()
+            continue
+
         if line.startswith("# "):
-            close_list()
+            flush_para(); close_list()
             out.append(f"<h1>{inline(line[2:])}</h1>")
-        elif line.startswith("## "):
-            close_list()
-            # The effective/updated block sits between the h1 and the first h2.
-            if not meta_done:
-                meta_done = True
+            continue
+
+        if line.startswith("## "):
+            flush_para(); close_list()
+            meta_done = True
             out.append(f"<h2>{inline(line[3:])}</h2>")
-        elif line.startswith("- "):
-            if not in_list:
-                out.append("<ul>")
-                in_list = True
-            out.append(f"<li>{inline(line[2:])}</li>")
-        else:
+            continue
+
+        bullet = re.match(r"^- +(.*)$", line)
+        numbered = re.match(r"^\d+\. +(.*)$", line)
+        if bullet or numbered:
+            flush_para()
+            flush_item()
+            open_list("ul" if bullet else "ol")
+            item = [(bullet or numbered).group(1)]
+            continue
+
+        # A continuation line: indented under a list item, or more of a
+        # paragraph. Either way it joins what came before rather than
+        # starting something new.
+        if list_tag and raw.startswith(("  ", "\t")):
+            item.append(line.strip())
+            continue
+
+        if list_tag:
             close_list()
-            cls = ' class="meta"' if not meta_done and line.startswith("**") else ""
-            out.append(f"<p{cls}>{inline(line)}</p>")
+        para.append(line.strip())
+
+    flush_para()
     close_list()
     return "\n".join(out)
 
@@ -121,20 +226,46 @@ def page(title, body):
 """
 
 
-os.makedirs(OUT, exist_ok=True)
+CHROME = ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+
+
+def to_pdf(html_path):
+    """Headless Chrome, because it is already on the machine and renders the
+    same CSS the page uses — no second rendering engine to keep in agreement."""
+    import subprocess
+    pdf_path = html_path[:-5] + ".pdf"
+    proc = subprocess.run(
+        [CHROME, "--headless", "--disable-gpu", "--no-sandbox",
+         "--no-pdf-header-footer", f"--print-to-pdf={pdf_path}",
+         "file://" + html_path],
+        capture_output=True, text=True, timeout=120)
+    if not os.path.exists(pdf_path):
+        print(proc.stderr[-500:], file=sys.stderr)
+        raise SystemExit(f"Chrome did not produce {pdf_path}")
+    return pdf_path
+
+
+want_pdf = "--pdf" in sys.argv
 count = 0
-for name in sorted(os.listdir(SRC)):
-    if not name.endswith(".md"):
+for group, src in SRC_DIRS:
+    if not os.path.isdir(src):
         continue
-    with open(os.path.join(SRC, name)) as f:
-        md = f.read()
-    title = next((l[2:].strip() for l in md.split("\n") if l.startswith("# ")), "Budget")
-    dest = os.path.join(OUT, name[:-3] + ".html")
-    with open(dest, "w") as f:
-        f.write(page(title, render(md)))
-    print("wrote", os.path.relpath(dest, ROOT))
-    count += 1
+    out_dir = os.path.join(OUT_ROOT, group)
+    os.makedirs(out_dir, exist_ok=True)
+    for name in sorted(os.listdir(src)):
+        if not name.endswith(".md"):
+            continue
+        with open(os.path.join(src, name)) as f:
+            md = f.read()
+        title = next((l[2:].strip() for l in md.split("\n") if l.startswith("# ")), "Budget")
+        dest = os.path.join(out_dir, name[:-3] + ".html")
+        with open(dest, "w") as f:
+            f.write(page(title, render(md)))
+        print("wrote", os.path.relpath(dest, ROOT))
+        if want_pdf:
+            print("wrote", os.path.relpath(to_pdf(dest), ROOT))
+        count += 1
 
 if count == 0:
-    print("no markdown found in docs/legal", file=sys.stderr)
+    print("no markdown found", file=sys.stderr)
     sys.exit(1)
