@@ -105,6 +105,33 @@ of the above. There are no service accounts belonging to outside parties.
 - There is no employee lifecycle to manage. Should that ever change, this
   policy is updated **before** access is granted, not after.
 
+## Vulnerability management
+
+Scanning runs continuously and without being asked, because a check that
+depends on someone remembering is not a control:
+
+- **Dependencies** — Dependabot watches the Swift, Docker and GitHub Actions
+  manifests weekly and opens a pull request when a dependency ships a fix.
+- **Container image** — Trivy scans lockfiles and manifests on every push, and
+  the fully built image weekly. The weekly cadence matters: most
+  vulnerabilities appear in code we have not touched.
+- **End-of-life software** — Trivy flags EOL base images and packages; the
+  server VM runs `unattended-upgrades` for OS security patches.
+- Findings are uploaded to GitHub code scanning, so they persist in the
+  Security tab with a history rather than scrolling past in a log.
+
+**Remediation targets.** Measured from when the finding appears, not from when
+it is noticed:
+
+| Severity | Target |
+|---|---|
+| Critical | 7 days |
+| High | 30 days |
+| Medium and below | Next routine dependency update |
+
+Where a fix is unavailable, the exposure is recorded here with whatever
+mitigation applies, rather than left as a silently open alert.
+
 ## How these controls are enforced
 
 Not aspirations — each of these is applied by something checked into the repo:
