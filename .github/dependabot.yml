@@ -1,0 +1,39 @@
+# Automated dependency vulnerability alerts and update PRs.
+#
+# This is half of the answer to "do you actively scan for vulnerabilities":
+# Dependabot watches the dependency graph and opens PRs when something we depend
+# on ships a fix. The other half is Trivy in .github/workflows/security.yml,
+# which scans the built container image — Dependabot sees our manifests, Trivy
+# sees the OS packages inside the image, and neither one covers the other.
+version: 2
+
+updates:
+  # Vapor, GRDB, swift-crypto, vapor/apns, vapor/jwt.
+  - package-ecosystem: "swift"
+    directory: "/Server"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "security"]
+
+  # BudgetCore is zero-dependency today; watched so that stays deliberate.
+  - package-ecosystem: "swift"
+    directory: "/Packages/BudgetCore"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels: ["dependencies"]
+
+  # The swift build image and the ubuntu runtime base.
+  - package-ecosystem: "docker"
+    directory: "/Server"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "security"]
+
+  # The actions used by the workflows below.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels: ["dependencies"]

@@ -1,0 +1,86 @@
+# Vulnerability scanning: the dependency graph is Dependabot's job, the built
+# image is this one's. Trivy sees the OS packages baked into the runtime layer
+# (openssl, libsqlcipher, the Ubuntu base) that no manifest scanner knows about,
+# and it flags end-of-life base images.
+#
+# Findings are uploaded to GitHub code scanning, so they land in the Security tab
+# with a history rather than scrolling past in a log.
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so a CVE published against a dependency we haven't touched still
+    # surfaces. Most vulnerabilities arrive without us changing a line.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF
+
+jobs:
+  # Fast: manifests and lockfiles. Runs on every push and PR.
+  dependencies:
+    name: Dependency scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned by digest-less tag for readability; bump deliberately. Trivy is
+      # run as its official container so there is no action version to guess at
+      # and no installer piped into a shell.
+      - name: Scan lockfiles and manifests
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo" \
+            -v trivy-cache:/root/.cache/trivy \
+            aquasec/trivy:0.58.1 fs \
+              --scanners vuln,secret,misconfig \
+              --severity HIGH,CRITICAL \
+              --format sarif \
+              --output /repo/trivy-fs.sarif \
+              /repo
+
+      - name: Upload results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-filesystem
+
+  # Slow: builds the real image and scans what actually ships. Weekly and on
+  # demand only — a full Swift release build is too slow for every push.
+  image:
+    name: Container image scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      # Repo root context, so the ../Packages/BudgetCore path dependency
+      # resolves — same as docker compose does.
+      - name: Build the server image
+        run: docker build -f Server/Dockerfile -t budget-server:scan .
+
+      - name: Scan the image
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/repo" \
+            aquasec/trivy:0.58.1 image \
+              --scanners vuln \
+              --severity HIGH,CRITICAL \
+              --format sarif \
+              --output /repo/trivy-image.sarif \
+              budget-server:scan
+
+      - name: Upload results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
