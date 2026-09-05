@@ -11,7 +11,7 @@ let package = Package(
         .package(url: "https://github.com/vapor/jwt.git", from: "5.1.0"),
         .package(url: "https://github.com/vapor/apns.git", from: "5.0.0"),
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
-        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1"),
         .package(path: "../Packages/BudgetCore"),
     ],
     targets: [
