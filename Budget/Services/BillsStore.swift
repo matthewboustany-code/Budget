@@ -22,9 +22,9 @@ final class BillsStore {
         defer { isLoading = false }
         do {
             async let seriesResponse: [RecurringSeries] = api.get("v1/recurring")
-            async let billsResponse: UpcomingBillsResponse = api.get("v1/bills/upcoming")
+            async let billsResponse = fetchBills()
             series = try await seriesResponse
-            bills = try await billsResponse.bills
+            bills = try await billsResponse
             errorMessage = nil
         } catch {
             errorMessage = friendly(error)
@@ -37,8 +37,7 @@ final class BillsStore {
         defer { isLoading = false }
         do {
             series = try await api.post("v1/recurring/refresh", body: Empty())
-            let response: UpcomingBillsResponse = try await api.get("v1/bills/upcoming")
-            bills = response.bills
+            bills = try await fetchBills()
             errorMessage = nil
         } catch {
             errorMessage = friendly(error)
@@ -61,8 +60,7 @@ final class BillsStore {
             if let index = series.firstIndex(where: { $0.id == seriesID }) {
                 series[index] = updated
             }
-            let response: UpcomingBillsResponse = try await api.get("v1/bills/upcoming")
-            bills = response.bills
+            bills = try await fetchBills()
             errorMessage = nil
             return true
         } catch {
@@ -70,6 +68,24 @@ final class BillsStore {
             return false
         }
     }
+
+    /// Upcoming bills anchored on the device's calendar day — the server's
+    /// own "today" is UTC, a day ahead every US evening.
+    private func fetchBills() async throws -> [Bill] {
+        let day = Self.dayFormatter.string(from: Date())
+        let response: UpcomingBillsResponse = try await api.get(
+            "v1/bills/upcoming", query: [.init(name: "today", value: day)])
+        return response.bills
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
 
     private func friendly(_ error: Error) -> String {
         (error as? APIClientError)?.errorDescription ?? error.localizedDescription

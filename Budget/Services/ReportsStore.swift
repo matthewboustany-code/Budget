@@ -26,8 +26,10 @@ final class ReportsStore {
         isLoading = true
         defer { isLoading = false }
         do {
+            // The device's month, not the server's (UTC) one.
             async let flow: CashFlowReportResponse = api.get(
-                "v1/reports/cashflow", query: [.init(name: "months", value: "6")])
+                "v1/reports/cashflow", query: [.init(name: "months", value: "6"),
+                                               .init(name: "end", value: Month(date: Date()).description)])
             async let spend: SpendingReportResponse = api.get(
                 "v1/reports/spending",
                 query: [.init(name: "month", value: spendingMonth.description)])

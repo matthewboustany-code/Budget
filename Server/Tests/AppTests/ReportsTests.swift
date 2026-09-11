@@ -185,3 +185,13 @@ struct ReportsTests {
         }
     }
 }
+
+@Suite("Plaid calendar dates")
+struct PlaidDateTests {
+    @Test("Plaid day-only dates parse to noon UTC")
+    func plaidDateIsNoonUTC() throws {
+        let date = try #require(TransactionSyncService.plaidDate("2026-08-01"))
+        #expect(DBFormat.string(date) == "2026-08-01T12:00:00Z")
+        #expect(TransactionSyncService.plaidDate("not-a-date") == nil)
+    }
+}

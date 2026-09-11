@@ -255,6 +255,17 @@ extension AppDatabase {
                 """)
         }
 
+        // Plaid dates were stored at UTC midnight, which is the previous
+        // evening across the US, so every transaction showed a day early. New
+        // ones are stored at noon UTC; move the old ones the same way. Only
+        // Plaid rows — they're the only dates that were ever day-only.
+        migrator.registerMigration("v5_plaid_dates_at_noon") { db in
+            try db.execute(sql: """
+                UPDATE transactions SET date = substr(date, 1, 10) || 'T12:00:00Z'
+                WHERE plaid_transaction_id IS NOT NULL AND date LIKE '%T00:00:00Z'
+                """)
+        }
+
         return migrator
     }
 }

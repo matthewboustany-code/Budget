@@ -247,3 +247,21 @@ struct BillProjectorTests {
         #expect(bills.map(\.name) == ["Soon", "Soon", "Soon", "Late"])
     }
 }
+
+@Suite("Calendar-day dates")
+struct CalendarDayTests {
+    /// Plaid's day-only dates are stored at 12:00 UTC so they fall on the same
+    /// calendar day in any zone within ±12 h. At midnight UTC this charge
+    /// would land in July for a Los Angeles user.
+    @Test("A noon-UTC date on the 1st stays in its month in LA and UTC")
+    func noonDateBucketsSameMonthInUSAndUTC() {
+        var noonUTC = utc
+        noonUTC.timeZone = TimeZone(identifier: "UTC")!
+        let firstOfAugust = noonUTC.date(from: DateComponents(year: 2026, month: 8, day: 1, hour: 12))!
+        var la = Calendar(identifier: .gregorian)
+        la.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        #expect(Month(date: firstOfAugust, calendar: la) == Month(year: 2026, month: 8))
+        #expect(Month(date: firstOfAugust, calendar: utc) == Month(year: 2026, month: 8))
+        #expect(la.component(.day, from: firstOfAugust) == 1)
+    }
+}

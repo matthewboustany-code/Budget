@@ -11,13 +11,22 @@ struct TransactionSyncService {
     let plaid: PlaidClient
     let cipher: TokenCipher
 
+    /// Plaid dates are calendar days with no time. They're stored at 12:00
+    /// UTC, not midnight: noon falls on the same calendar day in every zone
+    /// within ±12 h, so a charge on the 1st never shows under the 31st in the
+    /// US.
     private static let plaidDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = TimeZone(identifier: "UTC")
-        f.dateFormat = "yyyy-MM-dd"
+        f.dateFormat = "yyyy-MM-dd'T'HH"
         return f
     }()
+
+    static func plaidDate(_ day: String) -> Date? {
+        plaidDateFormatter.date(from: day + "T12")
+    }
 
     func sync(item: PlaidItemRecord) async throws {
         let token = try cipher.decrypt(item.accessTokenEncrypted)
@@ -77,7 +86,7 @@ struct TransactionSyncService {
             accountID: account.id,
             ownerMemberID: account.ownerMemberID,
             amount: AccountSyncService.decimal(pt.amount),
-            date: plaidDateFormatter.date(from: pt.date) ?? Date(),
+            date: plaidDate(pt.date) ?? Date(),
             name: pt.name,
             merchantName: pt.merchantName,
             categoryID: categoryName.flatMap { categoryIDByName[$0] },

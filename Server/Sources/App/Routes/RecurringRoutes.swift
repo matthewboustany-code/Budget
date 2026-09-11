@@ -48,16 +48,24 @@ func registerRecurringRoutes(_ routes: RoutesBuilder) {
         return updated
     }
 
-    // GET /v1/bills/upcoming?days=30 — occurrences projected over the window,
-    // including a two-week look-back so a bill that was due but hasn't posted
-    // yet shows as overdue instead of silently disappearing.
+    // GET /v1/bills/upcoming?days=30&today=YYYY-MM-DD — occurrences projected
+    // over the window, including a two-week look-back so a bill that was due
+    // but hasn't posted yet shows as overdue instead of silently disappearing.
+    // `today` is the device's calendar day; the server's own midnight is UTC.
     authed.grouped("bills").get("upcoming") { req async throws -> UpcomingBillsResponse in
         let (household, member) = try await req.requireMembership()
         let days = min(max(req.query[Int.self, at: "days"] ?? 30, 1), 365)
 
         let calendar = Calendar.current
         let now = Date()
-        let today = calendar.startOfDay(for: now)
+        var today = calendar.startOfDay(for: now)
+        if let raw = req.query[String.self, at: "today"] {
+            // Noon UTC, like Plaid dates, so it lands on the intended day.
+            guard let parsed = TransactionSyncService.plaidDate(raw) else {
+                throw Abort(.badRequest, reason: "today must look like 2026-07-15")
+            }
+            today = parsed
+        }
         let from = calendar.date(byAdding: .day, value: -14, to: today) ?? today
         let to = calendar.date(byAdding: .day, value: days, to: today) ?? today
 
