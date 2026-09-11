@@ -242,6 +242,19 @@ extension AppDatabase {
                 """)
         }
 
+        // `is_active` conflated two things: the user switching a series off, and
+        // detection finding it lapsed. Merging with AND meant a lapse (a skipped
+        // month, a sync gap) switched a series off for good. The user's choice
+        // now lives in its own column; `is_active` becomes detection AND NOT
+        // user_disabled. Backfill treats every inactive row as user-disabled —
+        // we can't tell them apart, and wrongly re-enabling is the worse error.
+        migrator.registerMigration("v4_recurring_user_disabled") { db in
+            try db.execute(sql: """
+                ALTER TABLE recurring_series ADD COLUMN user_disabled INTEGER NOT NULL DEFAULT 0;
+                UPDATE recurring_series SET user_disabled = 1 WHERE is_active = 0;
+                """)
+        }
+
         return migrator
     }
 }

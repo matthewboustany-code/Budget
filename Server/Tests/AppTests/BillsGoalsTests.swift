@@ -197,6 +197,36 @@ struct BillsGoalsTests {
         }
     }
 
+    @Test("A lapsed series goes inactive, then comes back when charges resume")
+    func lapsedSeriesReactivates() async throws {
+        try await withApp { app in
+            let alice = try await setupAlice(app)
+            let checking = try #require(try await accounts(app, token: alice.token).first { $0.type == .checking })
+            // Last charge 100 days ago — more than two monthly cadences — so detection
+            // reports the series inactive.
+            try await seedMonthly(app, account: checking, merchant: "Hulu", amount: 18, lastDaysAgo: 100)
+            let lapsed = try #require(try await refresh(app, token: alice.token)
+                .first { $0.name.lowercased().contains("hulu") })
+            #expect(lapsed.isActive == false)
+
+            // Charges resume. Distinct plaid ids so these add rather than update.
+            try await app.appDatabase.dbPool.write { db in
+                for daysAgo in [40, 10] {
+                    try TransactionStore.upsertPlaid(BudgetModels.Transaction(
+                        id: UUID(), householdID: checking.householdID, accountID: checking.id,
+                        ownerMemberID: checking.ownerMemberID, amount: 18,
+                        date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date())!,
+                        name: "Hulu", merchantName: "Hulu",
+                        plaidTransactionID: "resumed-hulu-\(daysAgo)", createdAt: Date()), db)
+                }
+            }
+            let resumed = try #require(try await refresh(app, token: alice.token)
+                .first { $0.name.lowercased().contains("hulu") })
+            #expect(resumed.id == lapsed.id)
+            #expect(resumed.isActive)
+        }
+    }
+
     @Test("Renaming a series survives re-detection without spawning a duplicate")
     func renameDoesNotDuplicate() async throws {
         try await withApp { app in
