@@ -138,6 +138,22 @@ struct TransactionStore {
         }
     }
 
+    /// Every transaction in the household within `[from, to)` regardless of
+    /// visibility — for operator commands (bill reminders) only, never for a
+    /// member-facing response. Mirrors `RecurringStore.listAll`.
+    func allInHousehold(householdID: UUID, from: Date, to: Date) async throws -> [Transaction] {
+        let args: [(any DatabaseValueConvertible)?] = [
+            householdID.uuidString, DBFormat.string(from), DBFormat.string(to)
+        ]
+        let arguments = StatementArguments(args)
+        return try await db.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT * FROM transactions
+                WHERE household_id = ? AND date >= ? AND date < ?
+                """, arguments: arguments).map(Transaction.init(row:))
+        }
+    }
+
     func get(id: UUID) async throws -> Transaction? {
         try await db.read { db in
             try Row.fetchOne(db, sql: "SELECT * FROM transactions WHERE id = ?", arguments: [id.uuidString])

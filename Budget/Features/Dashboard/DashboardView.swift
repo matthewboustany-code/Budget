@@ -151,7 +151,9 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var billsSection: some View {
-        let due = env.billsStore.bills.prefix(3)
+        // "Due soon" means still owed — a matched charge takes the bill off
+        // the dashboard; the Bills screen keeps it under Paid.
+        let due = env.billsStore.bills.filter { $0.status != .paid }.prefix(3)
         Section {
             ForEach(due) { bill in
                 HStack {

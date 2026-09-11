@@ -155,7 +155,8 @@ extension RecurringSeries {
             accountID: DBFormat.uuid(row["account_id"]),
             lastDate: DBFormat.date(row["last_date"]),
             nextDate: DBFormat.date(row["next_date"]),
-            isActive: DBFormat.bool(row["is_active"])
+            isActive: DBFormat.bool(row["is_active"]),
+            merchantKey: row["merchant_key"]
         )
     }
 }

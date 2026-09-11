@@ -95,6 +95,20 @@ struct BillsGoalsTests {
         }
     }
 
+    /// A single extra charge for a merchant, used to pay off a projected bill.
+    private func seedCharge(_ app: Application, account: Account, merchant: String,
+                            amount: Money, daysAgo: Int) async throws {
+        try await app.appDatabase.dbPool.write { db in
+            let tx = BudgetModels.Transaction(
+                id: UUID(), householdID: account.householdID, accountID: account.id,
+                ownerMemberID: account.ownerMemberID, amount: amount,
+                date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date())!,
+                name: merchant, merchantName: merchant, visibility: .shared,
+                plaidTransactionID: "paid-\(merchant)-\(daysAgo)", createdAt: Date())
+            try TransactionStore.upsertPlaid(tx, db)
+        }
+    }
+
     private func refresh(_ app: Application, token: String) async throws -> [RecurringSeries] {
         var out: [RecurringSeries] = []
         try await app.testing().test(.POST, "v1/recurring/refresh", headers: bearer(token),
@@ -145,8 +159,11 @@ struct BillsGoalsTests {
             // Last charge was 5 days ago → next due in ~25 days, inside the
             // default 30-day window.
             let bills = try await upcomingBills(app, token: alice.token)
-            let bill = try #require(bills.first { $0.recurringSeriesID == spotify.id })
-            #expect(bill.status == .upcoming)
+            let spotifyBills = bills.filter { $0.recurringSeriesID == spotify.id }
+            // The charge 5 days ago settled its own occurrence, which the
+            // look-back surfaces as paid ahead of the one still due.
+            #expect(spotifyBills.first?.status == .paid)
+            let bill = try #require(spotifyBills.first { $0.status == .upcoming })
             #expect(bill.amount == Decimal(string: "9.99"))
             #expect(bill.dueDate > Date())
         }
@@ -165,6 +182,31 @@ struct BillsGoalsTests {
             let bills = try await upcomingBills(app, token: alice.token)
             let gym = try #require(bills.first { $0.name.lowercased().contains("gym") })
             #expect(gym.status == .overdue)
+        }
+    }
+
+    @Test("A charge that lands on the due date marks the bill paid")
+    func chargeMarksBillPaid() async throws {
+        try await withApp { app in
+            let alice = try await setupAlice(app)
+            let checking = try #require(try await accounts(app, token: alice.token).first { $0.type == .checking })
+            // Last charge 30 days ago → next due ~today.
+            try await seedMonthly(app, account: checking, merchant: "Water Bill",
+                                  amount: 60, lastDaysAgo: 30)
+            _ = try await refresh(app, token: alice.token)
+
+            let before = try await upcomingBills(app, token: alice.token)
+            let due = try #require(before.first { $0.name.lowercased().contains("water") })
+            #expect(due.status != .paid)
+
+            // This month's charge posts; detection is NOT re-run, so the
+            // occurrence is still projected and must flip to paid.
+            try await seedCharge(app, account: checking, merchant: "Water Bill",
+                                 amount: 60, daysAgo: 0)
+            let after = try await upcomingBills(app, token: alice.token)
+            let paid = try #require(after.first { $0.name.lowercased().contains("water") })
+            #expect(paid.status == .paid)
+            #expect(paid.dueDate == due.dueDate)
         }
     }
 

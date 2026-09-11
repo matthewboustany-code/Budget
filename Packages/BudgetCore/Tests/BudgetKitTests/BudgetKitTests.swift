@@ -201,7 +201,8 @@ struct BillProjectorTests {
                         isActive: Bool = true) -> RecurringSeries {
         RecurringSeries(id: UUID(), householdID: household, name: name,
                         averageAmount: amount, cadence: cadence,
-                        nextDate: next, isActive: isActive)
+                        nextDate: next, isActive: isActive,
+                        merchantKey: RecurringDetector.normalize(name))
     }
 
     @Test func projectsMonthlyOccurrencesInWindow() {
@@ -245,6 +246,93 @@ struct BillProjectorTests {
             from: date(2026, 7, 22), to: date(2026, 8, 10),
             now: date(2026, 7, 22), calendar: utc)
         #expect(bills.map(\.name) == ["Soon", "Soon", "Soon", "Late"])
+    }
+
+    // MARK: - Paid matching (4.5)
+
+    @Test("A charge inside the tolerance marks the occurrence paid")
+    func matchingChargeMarksPaid() {
+        let netflix = series(next: date(2026, 7, 25))
+        // Posted two days late — inside the -3…+5 window.
+        let charge = tx(account: UUID(), category: nil, amount: Money(string: "15.99")!,
+                        on: date(2026, 7, 27), merchant: "NETFLIX.COM")
+        let bills = BillProjector.upcomingBills(series: [netflix],
+                                                from: date(2026, 7, 20), to: date(2026, 8, 30),
+                                                recentTransactions: [charge],
+                                                now: date(2026, 7, 28), calendar: utc)
+        #expect(bills.map(\.dueDate) == [date(2026, 7, 25), date(2026, 8, 25)])
+        #expect(bills.first?.status == .paid)
+        // The next month is untouched by July's payment.
+        #expect(bills.last?.status == .upcoming)
+    }
+
+    @Test("A charge outside the tolerance, or from another merchant, does not")
+    func nonMatchingChargesLeaveTheBillDue() {
+        let netflix = series(next: date(2026, 7, 25))
+        let tooLate = tx(account: UUID(), category: nil, amount: 15, on: date(2026, 8, 1),
+                         merchant: "Netflix")
+        let other = tx(account: UUID(), category: nil, amount: 15, on: date(2026, 7, 25),
+                       merchant: "Hulu")
+        let refund = tx(account: UUID(), category: nil, amount: -15, on: date(2026, 7, 25),
+                        merchant: "Netflix")
+        let bills = BillProjector.upcomingBills(series: [netflix],
+                                                from: date(2026, 7, 20), to: date(2026, 7, 31),
+                                                recentTransactions: [tooLate, other, refund],
+                                                now: date(2026, 7, 26), calendar: utc)
+        #expect(bills.count == 1)
+        #expect(bills.first?.status == .overdue)
+    }
+
+    @Test("One charge cannot pay two occurrences of the same series")
+    func eachChargeIsClaimedOnce() {
+        // Weekly, so two due dates sit inside one charge's tolerance.
+        let gym = series(name: "Gym", amount: 20, cadence: .weekly, next: date(2026, 7, 20))
+        let charge = tx(account: UUID(), category: nil, amount: 20, on: date(2026, 7, 24),
+                        merchant: "Gym")
+        let bills = BillProjector.upcomingBills(series: [gym],
+                                                from: date(2026, 7, 20), to: date(2026, 7, 28),
+                                                recentTransactions: [charge],
+                                                now: date(2026, 7, 25), calendar: utc)
+        #expect(bills.map(\.dueDate) == [date(2026, 7, 20), date(2026, 7, 27)])
+        #expect(bills.map(\.status) == [.paid, .upcoming])
+    }
+
+    @Test("An occurrence detection has already stepped past still shows as paid")
+    func backWalkSurfacesTheJustPaidOccurrence() {
+        // Netflix posted on the 25th; detection advanced nextDate to Aug 25,
+        // so without the back-walk July's occurrence would vanish entirely.
+        let netflix = series(next: date(2026, 8, 25))
+        let charge = tx(account: UUID(), category: nil, amount: Money(string: "15.99")!,
+                        on: date(2026, 7, 25), merchant: "Netflix")
+        let bills = BillProjector.upcomingBills(series: [netflix],
+                                                from: date(2026, 7, 14), to: date(2026, 8, 28),
+                                                recentTransactions: [charge],
+                                                now: date(2026, 7, 28), calendar: utc)
+        #expect(bills.map(\.dueDate) == [date(2026, 7, 25), date(2026, 8, 25)])
+        #expect(bills.map(\.status) == [.paid, .upcoming])
+    }
+
+    @Test("An unmatched past occurrence is history, not a new overdue bill")
+    func backWalkInventsNothing() {
+        let netflix = series(next: date(2026, 8, 25))
+        let bills = BillProjector.upcomingBills(series: [netflix],
+                                                from: date(2026, 7, 14), to: date(2026, 8, 28),
+                                                recentTransactions: [],
+                                                now: date(2026, 7, 28), calendar: utc)
+        #expect(bills.map(\.dueDate) == [date(2026, 8, 25)])
+    }
+
+    @Test("A series with no merchant key is never auto-paid")
+    func handMadeSeriesStayDue() {
+        var manual = series(name: "Loan to Sam", amount: 50, next: date(2026, 7, 25))
+        manual.merchantKey = nil
+        let charge = tx(account: UUID(), category: nil, amount: 50, on: date(2026, 7, 25),
+                        merchant: "Loan to Sam")
+        let bills = BillProjector.upcomingBills(series: [manual],
+                                                from: date(2026, 7, 20), to: date(2026, 7, 31),
+                                                recentTransactions: [charge],
+                                                now: date(2026, 7, 20), calendar: utc)
+        #expect(bills.first?.status == .upcoming)
     }
 }
 

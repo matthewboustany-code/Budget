@@ -30,6 +30,7 @@ struct BillReminderCommand: AsyncCommand {
         let householdStore = HouseholdStore(db: app.appDatabase.dbPool)
         let households = try await householdStore.allHouseholds()
         let recurringStore = RecurringStore(db: app.appDatabase.dbPool)
+        let transactionStore = TransactionStore(db: app.appDatabase.dbPool)
         let deviceStore = DeviceTokenStore(db: app.appDatabase.dbPool)
         let pushEnabled = app.appConfig.apnsConfigured
 
@@ -38,7 +39,14 @@ struct BillReminderCommand: AsyncCommand {
             // unfiltered series list (this is an operator command, not a
             // member-scoped API response).
             let series = try await recurringStore.listAll(householdID: household.id)
+            let paidFrom = calendar.date(byAdding: .day, value: BillProjector.paidWindow.lowerBound,
+                                         to: from) ?? from
+            let paidTo = calendar.date(byAdding: .day, value: BillProjector.paidWindow.upperBound + 1,
+                                       to: to) ?? to
+            let payments = try await transactionStore.allInHousehold(householdID: household.id,
+                                                                     from: paidFrom, to: paidTo)
             let bills = BillProjector.upcomingBills(series: series, from: from, to: to,
+                                                    recentTransactions: payments,
                                                     now: now, calendar: calendar)
             guard !bills.isEmpty else { continue }
             for bill in bills {
@@ -46,15 +54,19 @@ struct BillReminderCommand: AsyncCommand {
                 app.logger.info("Bill reminder [\(household.name)]: \(bill.name) \(bill.amount) due \(due) (\(bill.status))")
             }
 
-            guard pushEnabled else { continue }
+            // A bill whose charge already posted is logged but never pushed —
+            // nagging about something already paid is the fastest way to get
+            // reminders muted.
+            let unpaid = bills.filter { $0.status != .paid }
+            guard pushEnabled, !unpaid.isEmpty else { continue }
             let members = try await householdStore.members(householdID: household.id)
             let tokens = try await deviceStore.tokens(userIDs: members.map(\.userID))
             guard !tokens.isEmpty else { continue }
 
             // Thread by household so a couple's reminders group together in
             // Notification Center instead of interleaving.
-            await PushService.send(alert: Self.title(for: bills),
-                                   body: Self.body(for: bills),
+            await PushService.send(alert: Self.title(for: unpaid),
+                                   body: Self.body(for: unpaid),
                                    threadID: "bills-\(household.id.uuidString)",
                                    to: tokens, on: app)
         }

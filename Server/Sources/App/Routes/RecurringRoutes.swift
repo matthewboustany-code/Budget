@@ -71,7 +71,17 @@ func registerRecurringRoutes(_ routes: RoutesBuilder) {
 
         let series = try await req.recurring.listVisible(householdID: household.id,
                                                          memberID: member.id)
+        // Charges that could pay an occurrence in the window: the window itself
+        // widened by the matching tolerance on both sides.
+        let paidFrom = calendar.date(byAdding: .day, value: BillProjector.paidWindow.lowerBound,
+                                     to: from) ?? from
+        let paidTo = calendar.date(byAdding: .day, value: BillProjector.paidWindow.upperBound + 1,
+                                   to: to) ?? to
+        let payments = try await req.transactions.allVisible(householdID: household.id,
+                                                             memberID: member.id,
+                                                             from: paidFrom, to: paidTo)
         let bills = BillProjector.upcomingBills(series: series, from: from, to: to,
+                                                recentTransactions: payments,
                                                 now: now, calendar: calendar)
         return UpcomingBillsResponse(from: from, to: to, bills: bills)
     }

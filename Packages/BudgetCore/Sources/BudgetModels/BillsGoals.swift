@@ -15,10 +15,15 @@ public struct RecurringSeries: Codable, Sendable, Hashable, Identifiable {
     public var lastDate: Date?
     public var nextDate: Date?
     public var isActive: Bool
+    /// Normalized merchant this series was detected from
+    /// (`RecurringDetector.normalize`). Used to match posted transactions back
+    /// to an occurrence so it can be shown as paid. nil for hand-made series.
+    public var merchantKey: String?
 
     public init(id: UUID, householdID: UUID, name: String, categoryID: UUID? = nil,
                 averageAmount: Money, cadence: RecurringCadence, accountID: UUID? = nil,
-                lastDate: Date? = nil, nextDate: Date? = nil, isActive: Bool = true) {
+                lastDate: Date? = nil, nextDate: Date? = nil, isActive: Bool = true,
+                merchantKey: String? = nil) {
         self.id = id
         self.householdID = householdID
         self.name = name
@@ -29,6 +34,7 @@ public struct RecurringSeries: Codable, Sendable, Hashable, Identifiable {
         self.lastDate = lastDate
         self.nextDate = nextDate
         self.isActive = isActive
+        self.merchantKey = merchantKey
     }
 
     public var isIncome: Bool { averageAmount < 0 }
