@@ -13,6 +13,7 @@ final class GoalsStore {
     var goals: [Goal] = []
     var isLoading = false
     var errorMessage: String?
+    private(set) var lastLoaded: Date?
 
     init(api: APIClient) { self.api = api }
 
@@ -22,6 +23,7 @@ final class GoalsStore {
         do {
             goals = try await api.get("v1/goals")
             errorMessage = nil
+            lastLoaded = Date()
         } catch {
             errorMessage = friendly(error)
         }

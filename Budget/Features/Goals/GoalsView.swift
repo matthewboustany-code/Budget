@@ -54,7 +54,7 @@ struct GoalsView: View {
         }
         .refreshable { await store.load() }
         .task {
-            if store.goals.isEmpty { await store.load() }
+            if store.isStale() { await store.load() }
         }
     }
 }

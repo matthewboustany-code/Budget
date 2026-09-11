@@ -42,7 +42,7 @@ struct TransactionsView: View {
         .refreshable { await store.load(search: search) }
         .sheet(item: $autoOpen) { tx in NavigationStack { TransactionDetailView(transaction: tx) } }
         .task {
-            if store.transactions.isEmpty { await store.load() }
+            if store.isStale() { await store.load() }
             #if DEBUG
             if LaunchArgs.has("-openFirstTransaction") { autoOpen = store.transactions.first }
             #endif

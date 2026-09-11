@@ -29,8 +29,8 @@ struct BudgetView: View {
         }
         .refreshable { await store.load() }
         .task {
-            if store.rollup == nil { await store.load() }
-            if env.categoryStore.categories.isEmpty { await env.categoryStore.load() }
+            if store.isStale() { await store.load() }
+            if env.categoryStore.isStale() { await env.categoryStore.load() }
         }
     }
 

@@ -15,6 +15,7 @@ final class ReportsStore {
     var spending: SpendingReportResponse?
     var spendingMonth = Month(date: Date())
     var isLoading = false
+    private(set) var lastLoaded: Date?
     var errorMessage: String?
 
     init(api: APIClient) {
@@ -47,6 +48,7 @@ final class ReportsStore {
             cashFlow = try await flow.months
             spending = try await spend
             errorMessage = nil
+            lastLoaded = Date()
         } catch {
             errorMessage = friendly(error)
         }

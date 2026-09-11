@@ -77,6 +77,22 @@ final class AppEnvironment {
         }
     }
 
+    /// On returning to the foreground, reload whatever has gone stale. A
+    /// visible tab's `.task` doesn't re-run on foreground, so without this an
+    /// app left open overnight shows yesterday's numbers until pulled.
+    func refreshStale() async {
+        guard session.isSignedIn, session.household != nil else { return }
+        await householdStore.refresh()   // also clears the offline banner
+        if accountStore.isStale() { await accountStore.load() }
+        if transactionStore.isStale() { await transactionStore.load() }
+        if reportsStore.isStale() {
+            await reportsStore.load()
+            await budgetStore.loadCurrentMonth()
+        }
+        if budgetStore.isStale() { await budgetStore.load() }
+        if billsStore.isStale() { await billsStore.load() }
+    }
+
     enum ConnectionStatus: Equatable {
         case unknown
         case checking

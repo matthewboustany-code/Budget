@@ -8,6 +8,7 @@ struct RootTabView: View {
     enum TabID: String, Hashable { case home, accounts, transactions, budget, settings }
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var selection: TabID = LaunchArgs.value(for: "-startTab")
         .flatMap(TabID.init(rawValue:)) ?? .home
@@ -31,6 +32,9 @@ struct RootTabView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await env.refreshStale() } }
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             if env.isOffline {
                 Button {

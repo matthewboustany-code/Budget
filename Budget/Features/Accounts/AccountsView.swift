@@ -25,7 +25,7 @@ struct AccountsView: View {
         }
         .navigationTitle("Accounts")
         .toolbar { ToolbarItem(placement: .topBarTrailing) { linkMenu } }
-        .task { if store.accounts.isEmpty { await store.load() } }
+        .task { if store.isStale() { await store.load() } }
         .refreshable { await store.load() }
         .overlay { if store.isLinking { ProgressView("Connecting…").padding().background(.regularMaterial, in: .rect(cornerRadius: 12)) } }
         .fullScreenCover(isPresented: $showLink) {

@@ -30,7 +30,7 @@ struct DashboardView: View {
         .navigationTitle("Budget")
         .refreshable { await reload() }
         .task {
-            if env.reportsStore.cashFlow.isEmpty { await reload() }
+            if env.reportsStore.isStale() { await reload() }
         }
     }
 

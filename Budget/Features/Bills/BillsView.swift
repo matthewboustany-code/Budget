@@ -36,7 +36,7 @@ struct BillsView: View {
         .navigationTitle("Bills")
         .refreshable { await store.redetect() }
         .task {
-            if store.series.isEmpty { await store.load() }
+            if store.isStale() { await store.load() }
         }
     }
 

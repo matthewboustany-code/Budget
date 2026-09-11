@@ -13,6 +13,7 @@ final class AccountStore {
     var isLoading = false
     var isLinking = false
     var errorMessage: String?
+    private(set) var lastLoaded: Date?
 
     init(api: APIClient) {
         self.api = api
@@ -30,6 +31,7 @@ final class AccountStore {
             accounts = try await fetchedAccounts
             netWorth = try await fetchedNetWorth
             errorMessage = nil
+            lastLoaded = Date()
         } catch {
             errorMessage = friendly(error)
         }

@@ -12,6 +12,7 @@ final class CategoryStore {
     var groups: [CategoryGroup] = []
     var categories: [BudgetCategory] = []
     private var byID: [UUID: BudgetCategory] = [:]
+    private(set) var lastLoaded: Date?
 
     init(api: APIClient) { self.api = api }
 
@@ -21,6 +22,7 @@ final class CategoryStore {
             groups = response.groups.sorted { $0.sortOrder < $1.sortOrder }
             categories = response.categories.sorted { $0.sortOrder < $1.sortOrder }
             byID = Dictionary(categories.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            lastLoaded = Date()
         } catch {
             // Non-fatal; the picker just shows fewer options.
         }

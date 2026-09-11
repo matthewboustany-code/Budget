@@ -18,6 +18,7 @@ final class BudgetStore {
     /// whichever month the Budget tab has stepped to.
     var currentRollup: MonthBudget?
     var isLoading = false
+    private(set) var lastLoaded: Date?
     var errorMessage: String?
 
     private var budgetByCategory: [UUID: Budget] = [:]
@@ -43,6 +44,7 @@ final class BudgetStore {
             let response: BudgetMonthResponse = try await api.get("v1/budgets", query: Self.query(for: month))
             apply(response)
             errorMessage = nil
+            lastLoaded = Date()
         } catch {
             errorMessage = friendly(error)
         }

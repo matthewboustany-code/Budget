@@ -13,6 +13,7 @@ final class TransactionStore {
     var isLoading = false
     var errorMessage: String?
     private(set) var nextCursor: String?
+    private(set) var lastLoaded: Date?
 
     init(api: APIClient) {
         self.api = api
@@ -35,6 +36,7 @@ final class TransactionStore {
             transactions = page.transactions
             nextCursor = page.nextCursor
             errorMessage = nil
+            lastLoaded = Date()
         } catch {
             errorMessage = friendly(error)
         }

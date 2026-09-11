@@ -13,6 +13,7 @@ final class BillsStore {
     var series: [RecurringSeries] = []
     var bills: [Bill] = []
     var isLoading = false
+    private(set) var lastLoaded: Date?
     var errorMessage: String?
 
     init(api: APIClient) {
@@ -36,6 +37,7 @@ final class BillsStore {
             series = try await seriesResponse
             bills = try await billsResponse
             errorMessage = nil
+            lastLoaded = Date()
         } catch {
             errorMessage = friendly(error)
         }

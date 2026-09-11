@@ -23,8 +23,8 @@ struct ReportsView: View {
         .navigationTitle("Reports")
         .refreshable { await store.load() }
         .task {
-            if store.cashFlow.isEmpty { await store.load() }
-            if env.accountStore.netWorth == nil { await env.accountStore.load() }
+            if store.isStale() { await store.load() }
+            if env.accountStore.isStale() { await env.accountStore.load() }
         }
     }
 
