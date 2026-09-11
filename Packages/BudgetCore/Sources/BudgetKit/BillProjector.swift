@@ -51,8 +51,8 @@ public enum BillProjector {
 
     /// Calendar-aware stepping: monthly cadences land on the same day-of-month
     /// (clamped by `Calendar` for short months) instead of drifting by a fixed
-    /// day count.
-    static func nextOccurrence(after date: Date, cadence: RecurringCadence,
+    /// day count. Public so detection predicts `nextDate` the same way.
+    public static func nextOccurrence(after date: Date, cadence: RecurringCadence,
                                calendar: Calendar) -> Date? {
         switch cadence {
         case .weekly: return calendar.date(byAdding: .day, value: 7, to: date)

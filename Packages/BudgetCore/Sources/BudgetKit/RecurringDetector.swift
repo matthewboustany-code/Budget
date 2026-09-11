@@ -36,7 +36,9 @@ public enum RecurringDetector {
                   amounts.allSatisfy({ ($0 > 0) == (avg > 0) }) else { return nil }
 
             let last = sorted.last!.date
-            let next = calendar.date(byAdding: .day, value: cadence.approximateDays, to: last)
+            // Step the way projection does: last + 30 days drifts a bill on
+            // the 31st to the 30th, then the 29th…
+            let next = BillProjector.nextOccurrence(after: last, cadence: cadence, calendar: calendar)
 
             return RecurringSeries(
                 id: UUID(),

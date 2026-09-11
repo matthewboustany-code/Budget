@@ -265,3 +265,18 @@ struct CalendarDayTests {
         #expect(la.component(.day, from: firstOfAugust) == 1)
     }
 }
+
+@Suite("Recurring next date")
+struct RecurringNextDateTests {
+    @Test("A monthly bill on the 31st predicts the end of February, not March 2")
+    func monthlyNextDateClampsToMonthEnd() throws {
+        let account = UUID()
+        let charges = [date(2025, 11, 30), date(2025, 12, 31), date(2026, 1, 31)].map {
+            tx(account: account, category: nil, amount: 15, on: $0, merchant: "Gym")
+        }
+        let series = try #require(RecurringDetector.detect(
+            transactions: charges, householdID: household, calendar: utc, now: date(2026, 2, 1)).first)
+        #expect(series.cadence == .monthly)
+        #expect(series.nextDate == date(2026, 2, 28))
+    }
+}
