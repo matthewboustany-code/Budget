@@ -22,18 +22,20 @@ func registerReportRoutes(_ routes: RoutesBuilder) {
         let monthCount = min(max(req.query[Int.self, at: "months"] ?? 6, 1), 24)
         let end = try monthQuery(req, "end") ?? Month(date: Date())
 
-        async let allTransactions = req.transactions.allVisible(householdID: household.id,
-                                                                memberID: member.id)
-        let transferIDs = try await req.categories.transferCategoryIDs(householdID: household.id)
-        let transactions = try await allTransactions.filter {
-            $0.categoryID.map { !transferIDs.contains($0) } ?? true
-        }
-
         var months: [Month] = []
         var month = end
         for _ in 0..<monthCount {
             months.append(month)
             month = month.previous
+        }
+
+        // Only the months being reported.
+        async let allTransactions = req.transactions.allVisible(
+            householdID: household.id, memberID: member.id,
+            from: months.last?.startDate(), to: end.endDate())
+        let transferIDs = try await req.categories.transferCategoryIDs(householdID: household.id)
+        let transactions = try await allTransactions.filter {
+            $0.categoryID.map { !transferIDs.contains($0) } ?? true
         }
         let summaries = months.reversed().map {
             ReportCalculator.cashFlow(month: $0, transactions: transactions)
@@ -47,7 +49,8 @@ func registerReportRoutes(_ routes: RoutesBuilder) {
         let month = try monthQuery(req, "month") ?? Month(date: Date())
 
         async let transactions = req.transactions.allVisible(householdID: household.id,
-                                                             memberID: member.id)
+                                                             memberID: member.id,
+                                                             from: month.startDate(), to: month.endDate())
         // Archived categories too, or their past spend shows as "Uncategorized".
         async let categories = req.categories.listIncludingArchived(householdID: household.id)
         async let budgets = req.budgets.listAll(householdID: household.id)

@@ -91,19 +91,26 @@ struct TransactionStore {
         return TransactionPage(transactions: rows.map(\.tx), nextCursor: nextCursor)
     }
 
-    /// Every transaction visible to the member, unpaginated — input to the
-    /// budget rollup, which needs prior months for rollover. Same visibility
-    /// rule as `list` (a private account hides all its transactions).
-    func allVisible(householdID: UUID, memberID: UUID) async throws -> [Transaction] {
-        try await db.read { db in
-            try Row.fetchAll(db, sql: """
-                SELECT t.* FROM transactions t
-                JOIN accounts a ON a.id = t.account_id
-                WHERE t.household_id = ?
-                  AND (a.visibility = 'shared' OR a.owner_member_id = ?)
-                  AND (t.visibility = 'shared' OR t.owner_member_id = ?)
-                """, arguments: [householdID.uuidString, memberID.uuidString, memberID.uuidString])
-                .map(Transaction.init(row:))
+    /// Every transaction visible to the member within `[from, to)`,
+    /// unpaginated — input to the budget rollup and reports. Same visibility
+    /// rule as `list` (a private account hides all its transactions). Callers
+    /// should bound the range: unbounded, this loads the household's whole
+    /// history.
+    func allVisible(householdID: UUID, memberID: UUID,
+                    from: Date? = nil, to: Date? = nil) async throws -> [Transaction] {
+        var sql = """
+            SELECT t.* FROM transactions t
+            JOIN accounts a ON a.id = t.account_id
+            WHERE t.household_id = ?
+              AND (a.visibility = 'shared' OR a.owner_member_id = ?)
+              AND (t.visibility = 'shared' OR t.owner_member_id = ?)
+            """
+        var args: [(any DatabaseValueConvertible)?] = [householdID.uuidString, memberID.uuidString, memberID.uuidString]
+        if let from { sql += " AND t.date >= ?"; args.append(DBFormat.string(from)) }
+        if let to { sql += " AND t.date < ?"; args.append(DBFormat.string(to)) }
+        let arguments = StatementArguments(args)
+        return try await db.read { db in
+            try Row.fetchAll(db, sql: sql, arguments: arguments).map(Transaction.init(row:))
         }
     }
 
