@@ -32,12 +32,26 @@ public struct AuthResponse: Codable, Sendable {
     public var user: User
     public var household: Household?
     public var member: HouseholdMember?
+    /// Everyone in the household, so the app doesn't show only "you" until
+    /// the next `/me`. Defaults to empty for older servers.
+    public var members: [HouseholdMember]
 
-    public init(token: String, user: User, household: Household? = nil, member: HouseholdMember? = nil) {
+    public init(token: String, user: User, household: Household? = nil, member: HouseholdMember? = nil,
+                members: [HouseholdMember] = []) {
         self.token = token
         self.user = user
         self.household = household
         self.member = member
+        self.members = members
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        token = try c.decode(String.self, forKey: .token)
+        user = try c.decode(User.self, forKey: .user)
+        household = try c.decodeIfPresent(Household.self, forKey: .household)
+        member = try c.decodeIfPresent(HouseholdMember.self, forKey: .member)
+        members = try c.decodeIfPresent([HouseholdMember].self, forKey: .members) ?? []
     }
 }
 

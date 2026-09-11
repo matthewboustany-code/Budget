@@ -53,7 +53,7 @@ final class Session {
         user = response.user
         household = response.household
         member = response.member
-        if let member { members = [member] }
+        members = response.members.isEmpty ? (member.map { [$0] } ?? []) : response.members
         state = .signedIn
     }
 

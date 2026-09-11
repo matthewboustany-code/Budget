@@ -128,6 +128,11 @@ struct AuthHouseholdTests {
                     let me = try res.content.decode(MeResponse.self)
                     #expect(me.members.count == 2)
                 })
+
+            // A fresh sign-in carries the whole household, not just "you".
+            let again = try await signIn(app, token: "dev:alice", name: "Alice")
+            #expect(again.members.count == 2)
+            #expect(Set(again.members.map(\.displayName)) == ["Alice", "Bob"])
         }
     }
 

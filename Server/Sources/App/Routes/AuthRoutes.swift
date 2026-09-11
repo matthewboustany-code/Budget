@@ -41,8 +41,12 @@ func registerAuthRoutes(_ routes: RoutesBuilder) {
         // already set up.
         let member = try await req.households.membership(userID: user.id)
         var household: Household?
-        if let member { household = try await req.households.household(id: member.householdID) }
+        var members: [HouseholdMember] = []
+        if let member {
+            household = try await req.households.household(id: member.householdID)
+            members = try await req.households.members(householdID: member.householdID)
+        }
 
-        return AuthResponse(token: token, user: user, household: household, member: member)
+        return AuthResponse(token: token, user: user, household: household, member: member, members: members)
     }
 }
