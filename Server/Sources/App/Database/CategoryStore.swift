@@ -19,6 +19,15 @@ struct CategoryStore {
         }
     }
 
+    /// Every category including archived ones — for naming historical
+    /// transactions in reports. Pickers keep using `list`.
+    func listIncludingArchived(householdID: UUID) async throws -> [BudgetCategory] {
+        try await db.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM categories WHERE household_id = ? ORDER BY sort_order",
+                             arguments: [householdID.uuidString]).map(BudgetCategory.init(row:))
+        }
+    }
+
     func get(id: UUID) async throws -> BudgetCategory? {
         try await db.read { db in
             try Row.fetchOne(db, sql: "SELECT * FROM categories WHERE id = ?", arguments: [id.uuidString])

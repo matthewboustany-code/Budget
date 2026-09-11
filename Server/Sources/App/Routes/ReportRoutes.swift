@@ -48,12 +48,13 @@ func registerReportRoutes(_ routes: RoutesBuilder) {
 
         async let transactions = req.transactions.allVisible(householdID: household.id,
                                                              memberID: member.id)
-        async let tree = req.categories.list(householdID: household.id)
+        // Archived categories too, or their past spend shows as "Uncategorized".
+        async let categories = req.categories.listIncludingArchived(householdID: household.id)
         async let budgets = req.budgets.listAll(householdID: household.id)
         let transferIDs = try await req.categories.transferCategoryIDs(householdID: household.id)
 
         let entries = ReportCalculator.spendingByCategory(
-            month: month, categories: try await tree.categories,
+            month: month, categories: try await categories,
             transactions: try await transactions, budgets: try await budgets)
             .filter { $0.categoryID.map { !transferIDs.contains($0) } ?? true }
         let total = entries.reduce(Money(0)) { $0 + $1.amount }

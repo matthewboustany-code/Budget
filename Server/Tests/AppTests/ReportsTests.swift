@@ -163,6 +163,20 @@ struct ReportsTests {
         }
     }
 
+    @Test("An archived category keeps its name in the spending report")
+    func archivedCategoryKeepsName() async throws {
+        try await withApp { app in
+            let alice = try await setupAlice(app)
+            let groceries = try await category(app, token: alice.token, named: "Groceries")
+            try await app.testing().test(.DELETE, "v1/categories/\(groceries.id)", headers: bearer(alice.token),
+                afterResponse: { res async in #expect(res.status.code < 300) })
+
+            let report = try await julySpending(app, token: alice.token)
+            #expect(report.entries.contains { $0.categoryName == "Groceries" })
+            #expect(report.entries.contains { $0.categoryName == "Uncategorized" } == false)
+        }
+    }
+
     @Test("A private account's activity stays out of the partner's reports")
     func reportsRespectVisibility() async throws {
         try await withApp { app in
