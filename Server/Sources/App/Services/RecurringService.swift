@@ -16,12 +16,18 @@ import BudgetKit
 struct RecurringService {
     let db: DatabasePool
 
-    func refresh(householdID: UUID) async throws {
+    /// How far back detection looks. 24 months, not 12: a yearly series needs
+    /// three charges (`RecurringDetector.minimumOccurrences`), so this is the
+    /// floor that still sees one — anything shorter silently drops yearly bills.
+    static let lookbackMonths = 24
+
+    func refresh(householdID: UUID, now: Date = Date()) async throws {
+        let since = Calendar.current.date(byAdding: .month, value: -Self.lookbackMonths, to: now) ?? now
         let transactions = try await db.read { db in
             try Row.fetchAll(db, sql: """
                 SELECT * FROM transactions
-                WHERE household_id = ? AND visibility = 'shared'
-                """, arguments: [householdID.uuidString])
+                WHERE household_id = ? AND visibility = 'shared' AND date >= ?
+                """, arguments: [householdID.uuidString, DBFormat.string(since)])
                 .map(Transaction.init(row:))
         }
         let detected = RecurringDetector.detect(transactions: transactions,
