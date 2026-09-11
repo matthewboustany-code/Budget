@@ -122,7 +122,7 @@ Caddy auto-TLS), `Caddyfile`, `scripts/sync-cron.sh`, `scripts/backup-db.sh`,
 | `BudgetApp.swift` | Entry point; injects `AppEnvironment`; onboarding vs. main gate. |
 | `AppEnvironment.swift` | `@MainActor @Observable` DI container holding every store; launch bootstrap. |
 | `Session.swift` | Auth state + Keychain-backed token. |
-| `RootTabView.swift` | Home / Accounts / Transactions / Budget / Settings tabs (`.sidebarAdaptable`). |
+| `RootTabView.swift` | Home / Accounts / Transactions / Budget / Settings tabs (`.sidebarAdaptable`); selection lives in `AppEnvironment.selectedTab` so one tab can open another. |
 | `TypeAliases.swift` | `Transaction`/`Budget` disambiguation (SwiftUI and the module name collide). |
 
 ### Services/
@@ -142,9 +142,10 @@ Caddy auto-TLS), `Caddyfile`, `scripts/sync-cron.sh`, `scripts/backup-db.sh`,
 ### Features/ — one folder per screen
 
 `Onboarding` (sign-in → create/join household), `Dashboard` (Monarch-style
-home: net-worth sparkline, cash flow, budget bar, due-soon bills),
+home: "N to review" row, net-worth sparkline, cash flow, budget bar, due-soon bills),
 `Accounts` (incl. "Needs attention" reconnect and `ManualEntrySheets.swift` for
-manual accounts/transactions), `Transactions` (list + detail with comments/reactions),
+manual accounts/transactions), `Transactions` (list with filter sheet — review /
+uncategorized / account / category / dates — plus detail with comments/reactions),
 `Budget` (month switcher, budget-vs-actual, set-budget sheet),
 `Bills` (Upcoming/Recurring segments, series toggles), `Goals` (progress
 list, detail + contribution ledger, create/edit sheets),

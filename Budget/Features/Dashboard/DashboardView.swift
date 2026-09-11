@@ -15,6 +15,7 @@ struct DashboardView: View {
             if let error = env.reportsStore.errorMessage {
                 Section { Text(error).foregroundStyle(.red).font(.footnote) }
             }
+            reviewSection
             cashFlowSection
             budgetSection
             billsSection
@@ -39,7 +40,33 @@ struct DashboardView: View {
         async let bills: Void = env.billsStore.load()
         async let accounts: Void = env.accountStore.load()
         async let budget = env.budgetStore.loadCurrentMonth()
-        _ = await (reports, bills, accounts, budget)
+        async let review: Void = env.transactionStore.loadReviewSummary()
+        _ = await (reports, bills, accounts, budget, review)
+    }
+
+    // MARK: - Review inbox
+
+    /// The weekly reconcile loop: opens Transactions narrowed to what nobody
+    /// has marked reviewed yet. Switches tabs rather than pushing a list here —
+    /// the list's value-based links don't fire inside Home's pushed views.
+    @ViewBuilder
+    private var reviewSection: some View {
+        if let count = env.transactionStore.reviewSummary?.unreviewed, count > 0 {
+            Section {
+                Button {
+                    env.transactionStore.filter = .needsReview
+                    env.selectedTab = .transactions
+                } label: {
+                    HStack {
+                        Label("\(count) to review", systemImage: "tray.full")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    }
+                }
+                .foregroundStyle(.primary)
+            }
+        }
     }
 
     // MARK: - Net worth

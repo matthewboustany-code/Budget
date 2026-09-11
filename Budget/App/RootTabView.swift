@@ -10,11 +10,9 @@ struct RootTabView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var selection: TabID = LaunchArgs.value(for: "-startTab")
-        .flatMap(TabID.init(rawValue:)) ?? .home
-
     var body: some View {
-        TabView(selection: $selection) {
+        @Bindable var env = env
+        TabView(selection: $env.selectedTab) {
             Tab("Home", systemImage: "house.fill", value: TabID.home) {
                 NavigationStack { DashboardView() }
             }

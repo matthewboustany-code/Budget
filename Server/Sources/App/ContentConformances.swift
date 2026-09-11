@@ -29,6 +29,7 @@ extension NetWorthResponse: @retroactive Content {}
 // Transactions, categories & couples layer (P3)
 extension Transaction: @retroactive Content {}
 extension TransactionPage: @retroactive Content {}
+extension ReviewSummary: @retroactive Content {}
 extension TransactionDetailResponse: @retroactive Content {}
 extension UpdateTransactionRequest: @retroactive Content {}
 extension BudgetCategory: @retroactive Content {}

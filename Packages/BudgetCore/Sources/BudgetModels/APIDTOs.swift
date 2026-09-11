@@ -143,6 +143,17 @@ public struct TransactionPage: Codable, Sendable {
     }
 }
 
+/// Counts behind the dashboard's "to review" row, scoped to what the caller
+/// can see.
+public struct ReviewSummary: Codable, Sendable, Equatable {
+    public var unreviewed: Int
+    public var uncategorized: Int
+    public init(unreviewed: Int, uncategorized: Int) {
+        self.unreviewed = unreviewed
+        self.uncategorized = uncategorized
+    }
+}
+
 /// Partial update to a transaction. Only non-nil fields are applied
 /// (PATCH semantics); `clearCategory` distinguishes "leave as-is" from
 /// "set to uncategorized".

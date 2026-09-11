@@ -386,6 +386,62 @@ struct PlaidSyncTests {
         }
     }
 
+    private func reviewSummary(_ app: Application, token: String) async throws -> ReviewSummary {
+        var summary: ReviewSummary?
+        try await app.testing().test(.GET, "v1/transactions/review-summary", headers: bearer(token),
+            afterResponse: { res async throws in summary = try res.content.decode(ReviewSummary.self) })
+        return try #require(summary)
+    }
+
+    private func fetchTransactions(_ app: Application, token: String, query: String) async throws -> [Transaction] {
+        var page: TransactionPage?
+        try await app.testing().test(.GET, "v1/transactions?\(query)", headers: bearer(token),
+            afterResponse: { res async throws in page = try res.content.decode(TransactionPage.self) })
+        return try #require(page).transactions
+    }
+
+    @Test("Unreviewed and uncategorized filters, and the review summary, track edits")
+    func reviewInboxFilters() async throws {
+        try await withApp { app in
+            let alice = try await setupAliceWithData(app)
+            let txns = try await fetchTransactions(app, token: alice.token)
+            #expect(try await reviewSummary(app, token: alice.token) == ReviewSummary(unreviewed: 2, uncategorized: 0))
+            #expect(try await fetchTransactions(app, token: alice.token, query: "unreviewed=1").count == 2)
+            #expect(try await fetchTransactions(app, token: alice.token, query: "uncategorized=1").isEmpty)
+
+            let first = txns[0], second = txns[1]
+            try await app.testing().test(.PATCH, "v1/transactions/\(first.id)", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateTransactionRequest(isReviewed: true)) },
+                afterResponse: { _ async in })
+            try await app.testing().test(.PATCH, "v1/transactions/\(second.id)", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(["clearCategory": true]) },
+                afterResponse: { _ async in })
+
+            #expect(try await reviewSummary(app, token: alice.token) == ReviewSummary(unreviewed: 1, uncategorized: 1))
+            #expect(try await fetchTransactions(app, token: alice.token, query: "unreviewed=1").map(\.id) == [second.id])
+            #expect(try await fetchTransactions(app, token: alice.token, query: "uncategorized=1").map(\.id) == [second.id])
+            // Anything but "1" is no filter.
+            #expect(try await fetchTransactions(app, token: alice.token, query: "unreviewed=0").count == 2)
+        }
+    }
+
+    @Test("The review summary counts only the caller's visible transactions")
+    func reviewSummaryFollowsVisibility() async throws {
+        try await withApp { app in
+            let alice = try await setupAliceWithData(app)
+            let bob = try await addBob(app, aliceToken: alice.token)
+            var linked: [Account] = []
+            try await app.testing().test(.GET, "v1/accounts", headers: bearer(alice.token),
+                afterResponse: { res async throws in linked = try res.content.decode([Account].self) })
+            let card = try #require(linked.first { $0.type == .creditCard })
+            try await app.testing().test(.PATCH, "v1/accounts/\(card.id)", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateAccountRequest(visibility: .private)) },
+                afterResponse: { _ async in })
+            #expect(try await reviewSummary(app, token: bob.token).unreviewed == 1)
+            #expect(try await reviewSummary(app, token: alice.token).unreviewed == 2)
+        }
+    }
+
     @Test("Split amounts must add up to the transaction total")
     func splitsMustBalance() async throws {
         try await withApp { app in

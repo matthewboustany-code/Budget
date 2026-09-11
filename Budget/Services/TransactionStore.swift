@@ -9,11 +9,41 @@ import BudgetModels
 final class TransactionStore {
     private let api: APIClient
 
+    /// What the list is narrowed to. Setting it doesn't load — the list view
+    /// reloads when it differs from `loadedFilter`.
+    struct Filter: Equatable {
+        var accountID: UUID?
+        var categoryID: UUID?
+        var uncategorized = false
+        var unreviewed = false
+        var from: Date?
+        var to: Date?
+
+        static let needsReview = Filter(unreviewed: true)
+        var isActive: Bool { self != Filter() }
+
+        var queryItems: [URLQueryItem] {
+            let iso = ISO8601DateFormatter()
+            var items = [URLQueryItem]()
+            if let accountID { items.append(.init(name: "accountId", value: accountID.uuidString)) }
+            if uncategorized { items.append(.init(name: "uncategorized", value: "1")) }
+            else if let categoryID { items.append(.init(name: "categoryId", value: categoryID.uuidString)) }
+            if unreviewed { items.append(.init(name: "unreviewed", value: "1")) }
+            if let from { items.append(.init(name: "from", value: iso.string(from: from))) }
+            if let to { items.append(.init(name: "to", value: iso.string(from: to))) }
+            return items
+        }
+    }
+
     var transactions: [Transaction] = []
+    var filter = Filter()
+    var reviewSummary: ReviewSummary?
     var isLoading = false
     var errorMessage: String?
     private(set) var nextCursor: String?
     private(set) var lastLoaded: Date?
+    /// The filter the current `transactions` were fetched with.
+    private(set) var loadedFilter: Filter?
 
     init(api: APIClient) {
         self.api = api
@@ -21,7 +51,9 @@ final class TransactionStore {
         if let page: TransactionPage = api.cached("v1/transactions") {
             transactions = page.transactions
             nextCursor = page.nextCursor
+            loadedFilter = Filter()
         }
+        reviewSummary = api.cached("v1/transactions/review-summary")
     }
 
     var canLoadMore: Bool { nextCursor != nil }
@@ -29,17 +61,27 @@ final class TransactionStore {
     func load(search: String? = nil, reset: Bool = true) async {
         isLoading = true
         defer { isLoading = false }
+        let requested = filter
         do {
-            var query = [URLQueryItem]()
+            var query = requested.queryItems
             if let search, !search.isEmpty { query.append(.init(name: "search", value: search)) }
             let page: TransactionPage = try await api.get("v1/transactions", query: query)
+            // A newer filter may have been set while this was in flight.
+            guard requested == filter else { return }
             transactions = page.transactions
             nextCursor = page.nextCursor
+            loadedFilter = requested
             errorMessage = nil
             lastLoaded = Date()
         } catch {
             errorMessage = friendly(error)
         }
+        await loadReviewSummary()
+    }
+
+    func loadReviewSummary() async {
+        do { reviewSummary = try await api.get("v1/transactions/review-summary") }
+        catch { /* the dashboard row just stays as it was */ }
     }
 
     func loadMore(search: String? = nil) async {
@@ -47,7 +89,7 @@ final class TransactionStore {
         isLoading = true
         defer { isLoading = false }
         do {
-            var query = [URLQueryItem(name: "cursor", value: cursor)]
+            var query = filter.queryItems + [URLQueryItem(name: "cursor", value: cursor)]
             if let search, !search.isEmpty { query.append(.init(name: "search", value: search)) }
             let page: TransactionPage = try await api.get("v1/transactions", query: query)
             transactions.append(contentsOf: page.transactions)
@@ -93,6 +135,9 @@ final class TransactionStore {
         do {
             let updated: Transaction = try await api.patch("v1/transactions/\(id.uuidString)", body: request)
             if let index = transactions.firstIndex(where: { $0.id == id }) { transactions[index] = updated }
+            if request.isReviewed != nil || request.categoryID != nil || request.clearCategory != nil {
+                await loadReviewSummary()
+            }
             return updated
         } catch {
             errorMessage = friendly(error)

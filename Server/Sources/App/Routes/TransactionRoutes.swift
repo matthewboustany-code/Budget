@@ -9,7 +9,7 @@ func registerTransactionRoutes(_ routes: RoutesBuilder) {
     let authed = routes.grouped(AuthMiddleware())
     let txs = authed.grouped("transactions")
 
-    // GET /v1/transactions?from=&to=&accountId=&categoryId=&search=&cursor=&limit=
+    // GET /v1/transactions?from=&to=&accountId=&categoryId=&uncategorized=1&unreviewed=1&search=&cursor=&limit=
     // `cursor` is the opaque keyset token from the previous page's nextCursor.
     txs.get { req async throws -> TransactionPage in
         let (household, member) = try await req.requireMembership()
@@ -20,9 +20,17 @@ func registerTransactionRoutes(_ routes: RoutesBuilder) {
         filter.accountID = req.query[String.self, at: "accountId"].flatMap { UUID(uuidString: $0) }
         filter.categoryID = req.query[String.self, at: "categoryId"].flatMap { UUID(uuidString: $0) }
         filter.search = req.query[String.self, at: "search"]
+        filter.uncategorized = req.query[String.self, at: "uncategorized"] == "1"
+        filter.unreviewed = req.query[String.self, at: "unreviewed"] == "1"
         filter.cursor = req.query[String.self, at: "cursor"]
         filter.limit = min(max(req.query[Int.self, at: "limit"] ?? 50, 1), 200)
         return try await req.transactions.list(householdID: household.id, memberID: member.id, filter: filter)
+    }
+
+    // GET /v1/transactions/review-summary — counts for the dashboard's review row.
+    txs.get("review-summary") { req async throws -> ReviewSummary in
+        let (household, member) = try await req.requireMembership()
+        return try await req.transactions.reviewSummary(householdID: household.id, memberID: member.id)
     }
 
     // GET /v1/transactions/:id — detail with comments + reactions.

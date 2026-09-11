@@ -20,6 +20,11 @@ final class AppEnvironment {
     let reportsStore: ReportsStore
     let pushRegistrar: PushRegistrar
 
+    /// The selected root tab — here, not in RootTabView, so a card on one tab
+    /// (the dashboard's review row) can send the user to another.
+    var selectedTab: RootTabView.TabID = LaunchArgs.value(for: "-startTab")
+        .flatMap(RootTabView.TabID.init(rawValue:)) ?? .home
+
     /// Result of the last `/health` probe, shown in Settings.
     var connectionStatus: ConnectionStatus = .unknown
     /// True while the launch-time `/me` refresh is in flight, so the UI can show

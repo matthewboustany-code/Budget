@@ -15,6 +15,8 @@ struct TransactionStore {
         var accountID: UUID?
         var categoryID: UUID?
         var search: String?
+        var uncategorized = false
+        var unreviewed = false
         /// Opaque keyset cursor from the previous page's `nextCursor`.
         var cursor: String?
         var limit: Int = 50
@@ -56,6 +58,8 @@ struct TransactionStore {
         if let to = filter.to { sql += " AND t.date <= ?"; args.append(DBFormat.string(to)) }
         if let accountID = filter.accountID { sql += " AND t.account_id = ?"; args.append(accountID.uuidString) }
         if let categoryID = filter.categoryID { sql += " AND t.category_id = ?"; args.append(categoryID.uuidString) }
+        if filter.uncategorized { sql += " AND t.category_id IS NULL" }
+        if filter.unreviewed { sql += " AND t.is_reviewed = 0" }
         if let search = filter.search, !search.isEmpty {
             // Escape LIKE's wildcards so "100%" matches the literal text.
             let escaped = search.replacingOccurrences(of: "\\", with: "\\\\")
@@ -89,6 +93,26 @@ struct TransactionStore {
             nextCursor = rows.last?.key.encoded
         }
         return TransactionPage(transactions: rows.map(\.tx), nextCursor: nextCursor)
+    }
+
+    /// How many visible transactions still need review / a category — one
+    /// aggregate query, same visibility rule as `list`.
+    func reviewSummary(householdID: UUID, memberID: UUID) async throws -> ReviewSummary {
+        let sql = """
+            SELECT COALESCE(SUM(t.is_reviewed = 0), 0) AS unreviewed,
+                   COALESCE(SUM(t.category_id IS NULL), 0) AS uncategorized
+            FROM transactions t
+            JOIN accounts a ON a.id = t.account_id
+            WHERE t.household_id = ?
+              AND (a.visibility = 'shared' OR a.owner_member_id = ?)
+              AND (t.visibility = 'shared' OR t.owner_member_id = ?)
+            """
+        let args: [(any DatabaseValueConvertible)?] = [householdID.uuidString, memberID.uuidString, memberID.uuidString]
+        let arguments = StatementArguments(args)
+        return try await db.read { db in
+            let row = try Row.fetchOne(db, sql: sql, arguments: arguments)
+            return ReviewSummary(unreviewed: row?["unreviewed"] ?? 0, uncategorized: row?["uncategorized"] ?? 0)
+        }
     }
 
     /// Every transaction visible to the member within `[from, to)`,
