@@ -41,6 +41,12 @@ struct SettingsView: View {
             }
 
             Section {
+                NavigationLink { CategoriesView() } label: {
+                    Label("Categories", systemImage: "square.grid.2x2")
+                }
+            }
+
+            Section {
                 Button {
                     showServerEditor = true
                 } label: {

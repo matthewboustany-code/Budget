@@ -8,9 +8,12 @@ func registerCategoryRoutes(_ routes: RoutesBuilder) {
     let authed = routes.grouped(AuthMiddleware())
     let categories = authed.grouped("categories")
 
+    // GET /v1/categories[?includeArchived=1] — archived rows only on request,
+    // for the management screen's un-archive list.
     categories.get { req async throws -> CategoriesResponse in
         let (household, _) = try await req.requireMembership()
-        return try await req.categories.list(householdID: household.id)
+        let includeArchived = req.query[String.self, at: "includeArchived"] == "1"
+        return try await req.categories.list(householdID: household.id, includeArchived: includeArchived)
     }
 
     // POST /v1/categories — add a custom category to an existing group.

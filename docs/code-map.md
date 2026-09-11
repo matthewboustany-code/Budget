@@ -136,7 +136,7 @@ Caddy auto-TLS), `Caddyfile`, `scripts/sync-cron.sh`, `scripts/backup-db.sh`,
 | `Keychain.swift` / `ServerConfig.swift` / `LaunchArgs.swift` | Token storage; base-URL resolution; DEBUG scripted-launch flags. |
 | `AuthStore` / `HouseholdStore` | Sign in with Apple (+ dev sign-in), household create/join/invite. |
 | `AccountStore` | Accounts + net worth; Plaid link-token/exchange/sandbox. |
-| `TransactionStore` / `CategoryStore` / `BudgetStore` | Feature state mirroring the corresponding endpoints. |
+| `TransactionStore` / `CategoryStore` / `BudgetStore` | Feature state mirroring the corresponding endpoints. `CategoryStore` loads archived rows too (`archived`, and names for old transactions) and owns category management + merchant rules. |
 | `BillsStore` / `GoalsStore` / `ReportsStore` | P5/P6 state: series + projected bills, goals + contributions, cashflow/spending. |
 | `PlaidLinkPresenter.swift` | Wraps Plaid LinkKit. |
 
@@ -152,5 +152,6 @@ and `SplitEditorView.swift` for splitting one transaction across categories),
 `Bills` (Upcoming/Recurring segments, series toggles), `Goals` (progress
 list, detail + contribution ledger, create/edit sheets),
 `Reports` (Swift Charts: cashflow bars, spending bars, net-worth line),
-`Settings` (members, invite, connection status, sign out),
+`Settings` (members, invite, connection status, sign out; `CategoriesView.swift`
+for category create/rename/icon/archive/restore/reorder and merchant rules),
 `Shared/PlaceholderScreen` (onboarding placeholder).

@@ -9,11 +9,12 @@ import BudgetModels
 struct CategoryStore {
     let db: DatabasePool
 
-    func list(householdID: UUID) async throws -> CategoriesResponse {
-        try await db.read { db in
+    func list(householdID: UUID, includeArchived: Bool = false) async throws -> CategoriesResponse {
+        let archivedFilter = includeArchived ? "" : " AND is_archived = 0"
+        return try await db.read { db in
             let groups = try Row.fetchAll(db, sql: "SELECT * FROM category_groups WHERE household_id = ? ORDER BY sort_order",
                                           arguments: [householdID.uuidString]).map(CategoryGroup.init(row:))
-            let categories = try Row.fetchAll(db, sql: "SELECT * FROM categories WHERE household_id = ? AND is_archived = 0 ORDER BY sort_order",
+            let categories = try Row.fetchAll(db, sql: "SELECT * FROM categories WHERE household_id = ?\(archivedFilter) ORDER BY sort_order",
                                               arguments: [householdID.uuidString]).map(BudgetCategory.init(row:))
             return CategoriesResponse(groups: groups, categories: categories)
         }
