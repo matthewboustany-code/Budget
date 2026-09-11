@@ -146,7 +146,8 @@ Caddy auto-TLS), `Caddyfile`, `scripts/sync-cron.sh`, `scripts/backup-db.sh`,
 home: "N to review" row, net-worth sparkline, cash flow, budget bar, due-soon bills),
 `Accounts` (incl. "Needs attention" reconnect and `ManualEntrySheets.swift` for
 manual accounts/transactions), `Transactions` (list with filter sheet — review /
-uncategorized / account / category / dates — plus detail with comments/reactions),
+uncategorized / account / category / dates — plus detail with comments/reactions,
+and `SplitEditorView.swift` for splitting one transaction across categories),
 `Budget` (month switcher, budget-vs-actual, set-budget sheet),
 `Bills` (Upcoming/Recurring segments, series toggles), `Goals` (progress
 list, detail + contribution ledger, create/edit sheets),

@@ -145,8 +145,13 @@ struct TransactionRow: View {
                         Text("Pending").font(.caption2).foregroundStyle(.orange)
                     }
                 }
-                Text(env.categoryStore.name(for: transaction.categoryID))
-                    .font(.caption).foregroundStyle(.secondary)
+                if transaction.isSplit {
+                    Label("Split · \(transaction.splits.count) categories", systemImage: "square.split.2x1")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text(env.categoryStore.name(for: transaction.categoryID))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {

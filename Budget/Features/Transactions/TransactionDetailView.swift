@@ -103,6 +103,18 @@ struct TransactionDetailView: View {
             }
             .pickerStyle(.menu)
 
+            // View-destination link, not value-based: this view is also shown
+            // inside Home's stack, where value links don't fire.
+            NavigationLink {
+                SplitEditorView(transaction: tx) { tx = $0 }
+            } label: {
+                LabeledContent {
+                    Text(tx.isSplit ? "\(tx.splits.count) categories" : "")
+                } label: {
+                    Label("Split", systemImage: "square.split.2x1")
+                }
+            }
+
             HStack {
                 Text("Note")
                 Spacer()
