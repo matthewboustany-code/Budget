@@ -337,6 +337,13 @@ extension AppDatabase {
                 """)
         }
 
+        // RecurringDetector.normalize now splits on punctuation and drops web
+        // suffixes ("NETFLIX.COM" → "netflix", not "netflixcom"), so stored
+        // series and rule keys are recomputed with it.
+        migrator.registerMigration("v11_merchant_keys") { db in
+            try MerchantKeyMigration.rekey(db)
+        }
+
         return migrator
     }
 }

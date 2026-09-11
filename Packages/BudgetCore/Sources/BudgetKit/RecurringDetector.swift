@@ -59,9 +59,30 @@ public enum RecurringDetector {
     /// "NETFLIX #123" and "Netflix" collapse to one merchant. Public because
     /// it is also the stable key the server uses to match freshly detected
     /// series against stored ones across refreshes.
+    ///
+    /// Punctuation and digits separate words rather than vanishing (the old
+    /// rule turned "NETFLIX.COM" into "netflixcom", which never matched
+    /// Plaid's "Netflix"), web prefixes/suffixes are dropped, and only
+    /// apostrophes and ampersands join letters ("McDonald's", "AT&T").
+    /// Changing this re-keys stored series and rules — see migration
+    /// `v11_merchant_keys`.
     public static func normalize(_ raw: String) -> String {
-        let lowered = raw.lowercased()
-        let stripped = lowered.unicodeScalars.filter {
+        var text = raw.lowercased()
+        text = text.replacingOccurrences(of: #"\bwww\."#, with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"\.(com|net|org|co|io|us|tv)\b"#, with: "",
+                                         options: .regularExpression)
+        let joiners: Set<Unicode.Scalar> = ["'", "\u{2019}", "&"]
+        var words = ""
+        for scalar in text.unicodeScalars where !joiners.contains(scalar) {
+            words.unicodeScalars.append(CharacterSet.letters.contains(scalar) ? scalar : " ")
+        }
+        return words.split(separator: " ").prefix(3).joined(separator: " ")
+    }
+
+    /// The pre-v11 normalizer, kept only so the v11 migration can recognise
+    /// keys it produced. Never use it for new keys.
+    public static func legacyNormalize(_ raw: String) -> String {
+        let stripped = raw.lowercased().unicodeScalars.filter {
             CharacterSet.letters.contains($0) || $0 == " "
         }
         return String(String.UnicodeScalarView(stripped))

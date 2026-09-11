@@ -69,6 +69,7 @@ computed properties).
 | `TransactionStore` | Visibility-join listing/pagination/search, PATCH updates, `upsertPlaid` (preserves user edits). |
 | `CategoryStore` | Category tree CRUD (delete = archive) + `CategorySeeder` (default tree, Plaid category mapping) + transfer-category lookup. |
 | `CategoryRuleStore` | Merchant → category rules keyed by `RecurringDetector.normalize`; `apply` upserts a rule and recategorizes visible matches whose `category_source` isn't `user`. |
+| `MerchantKeyMigration` | v11 re-keying of `recurring_series` / `category_rules` after `RecurringDetector.normalize` changed; recovers rule merchants via `legacyNormalize`. |
 | `BudgetStore` | Monthly budget upsert/list (storage only — math is BudgetKit's). |
 | `CommentReactionStore` | Honeydue comments + reactions. |
 | `RecurringStore` | Series listing (account-visibility scoped), PATCH, `mergeDetected` (detection owns numbers; user owns name/category/off-switch). |

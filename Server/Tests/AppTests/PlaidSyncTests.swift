@@ -548,6 +548,40 @@ struct PlaidSyncTests {
         }
     }
 
+    @Test("v11 re-keys a legacy rule from its merchant, and a web-style name matches Plaid's")
+    func merchantKeyMigration() async throws {
+        try await withApp { app in
+            let alice = try await setupAliceWithData(app)
+            let shopping = try #require(try await fetchCategories(app, token: alice.token).first { $0.name == "Shopping" })
+            let wallet = try await createWallet(app, token: alice.token)
+            let web = try await addManual(app, token: alice.token, account: wallet, name: "NETFLIX.COM")
+
+            // New keys: the manual "NETFLIX.COM" and Plaid's "Netflix" are one merchant.
+            try await app.testing().test(.POST, "v1/category-rules", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(CreateCategoryRuleRequest(transactionID: web.id, categoryID: shopping.id)) },
+                afterResponse: { res async throws in
+                    let response = try res.content.decode(CreateCategoryRuleResponse.self)
+                    #expect(response.rule.merchantKey == "netflix")
+                    #expect(response.updatedCount == 2)
+                })
+
+            // A rule saved under the old normalizer comes back re-keyed.
+            try await app.appDatabase.dbPool.write { db in
+                try db.execute(sql: "UPDATE category_rules SET merchant_key = 'netflixcom'")
+                try db.execute(sql: "UPDATE recurring_series SET merchant_key = 'stale'")
+                try MerchantKeyMigration.rekey(db)
+            }
+            var rules: [CategoryRule] = []
+            try await app.testing().test(.GET, "v1/category-rules", headers: bearer(alice.token),
+                afterResponse: { res async throws in rules = try res.content.decode([CategoryRule].self) })
+            #expect(rules.map(\.merchantKey) == ["netflix"])
+            let staleSeries = try await app.appDatabase.dbPool.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM recurring_series WHERE merchant_key = 'stale'") ?? 0
+            }
+            #expect(staleSeries == 0)
+        }
+    }
+
     @Test("Split amounts must add up to the transaction total")
     func splitsMustBalance() async throws {
         try await withApp { app in
