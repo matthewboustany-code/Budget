@@ -61,25 +61,29 @@ struct TransactionDetailView: View {
 
     private var detailsSection: some View {
         Section {
-            Menu {
+            // A native menu Picker, not Menu { } label: { LabeledContent }: inside a
+            // List row on iOS 26 that Menu expanded to fill the section, leaving a
+            // ~330pt gap under "Category". Picker sizes like any other row.
+            Picker("Category", selection: Binding(
+                get: { tx.categoryID },
+                set: { newValue in
+                    Task {
+                        let request: UpdateTransactionRequest = newValue.map { .init(categoryID: $0) }
+                            ?? .init(clearCategory: true)
+                        if let u = await store.update(tx.id, request) { tx = u }
+                    }
+                })) {
+                Label("Uncategorized", systemImage: "xmark.circle").tag(UUID?.none)
                 ForEach(env.categoryStore.categoriesByGroup(), id: \.group.id) { entry in
                     Section(entry.group.name) {
                         ForEach(entry.categories) { category in
-                            Button {
-                                Task { if let u = await store.update(tx.id, .init(categoryID: category.id)) { tx = u } }
-                            } label: { Label(category.name, systemImage: category.icon ?? "tag") }
+                            Label(category.name, systemImage: category.icon ?? "tag")
+                                .tag(Optional(category.id))
                         }
                     }
                 }
-                Button(role: .destructive) {
-                    Task { if let u = await store.update(tx.id, .init(clearCategory: true)) { tx = u } }
-                } label: { Label("Uncategorized", systemImage: "xmark.circle") }
-            } label: {
-                LabeledContent("Category") {
-                    Label(env.categoryStore.name(for: tx.categoryID),
-                          systemImage: env.categoryStore.icon(for: tx.categoryID))
-                }
             }
+            .pickerStyle(.menu)
 
             HStack {
                 Text("Note")
