@@ -35,12 +35,22 @@ struct TransactionSyncService {
         while hasMore && pages < 50 {
             let response = try await plaid.transactionsSync(accessToken: token, cursor: cursor)
             try await db.write { db in
+                // Added before removed: a posted transaction arrives in `added`
+                // with its pending predecessor in `removed`. Deleting first
+                // would cascade away the pending row's comments and user edits,
+                // so the posted one takes over the pending row in place instead.
+                var repointed: Set<String> = []
                 for pt in response.added + response.modified {
                     guard let account = accountByPlaid[pt.accountId] else { continue }
                     let tx = Self.map(pt, account: account, categoryIDByName: categoryIDByName)
+                    if let pendingID = pt.pendingTransactionId,
+                       try TransactionStore.repointPending(from: pendingID, to: tx, db) {
+                        repointed.insert(pendingID)
+                        continue
+                    }
                     try TransactionStore.upsertPlaid(tx, db)
                 }
-                for removed in response.removed {
+                for removed in response.removed where !repointed.contains(removed.transactionId) {
                     try db.execute(sql: "DELETE FROM transactions WHERE plaid_transaction_id = ?",
                                    arguments: [removed.transactionId])
                 }

@@ -117,6 +117,21 @@ struct TransactionStore {
         }
     }
 
+    /// Re-point the pending row `oldPlaidID` at its posted replacement, keeping
+    /// the row's UUID — and with it category, note, splits, comments and
+    /// reactions. Returns false when no pending row exists (nothing to keep).
+    @discardableResult
+    static func repointPending(from oldPlaidID: String, to tx: Transaction, _ db: Database) throws -> Bool {
+        guard let plaidID = tx.plaidTransactionID else { return false }
+        try db.execute(sql: """
+            UPDATE transactions SET plaid_transaction_id = ?, amount = ?, date = ?, name = ?,
+                merchant_name = ?, status = ?
+            WHERE plaid_transaction_id = ?
+            """, arguments: [plaidID, DBFormat.string(tx.amount), DBFormat.string(tx.date), tx.name,
+                             tx.merchantName, tx.status.rawValue, oldPlaidID])
+        return db.changesCount > 0
+    }
+
     /// Insert a Plaid transaction, or update only Plaid-owned fields if it exists
     /// (so user edits — category, note, reviewed, visibility — are preserved).
     static func upsertPlaid(_ tx: Transaction, _ db: Database) throws {

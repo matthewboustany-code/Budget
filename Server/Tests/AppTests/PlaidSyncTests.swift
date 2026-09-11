@@ -72,6 +72,29 @@ actor RecordingPlaidTransport: PlaidTransport {
     }
 }
 
+/// Serves a pending charge on the first `/transactions/sync`, then the page in
+/// which Plaid posts it: the pending id in `removed`, a new id in `added`.
+actor PendingThenPostedTransport: PlaidTransport {
+    private let inner = MockPlaidTransport()
+    private var syncs = 0
+
+    func post(url: URL, json: Data) async throws -> (data: Data, status: Int) {
+        guard url.path == "/transactions/sync" else { return try await inner.post(url: url, json: json) }
+        syncs += 1
+        let body = syncs == 1 ? """
+            {"added":[{"transaction_id":"tx_pending","account_id":"acc_check","amount":20.00,
+              "date":"2026-07-20","name":"Corner Cafe","merchant_name":"Corner Cafe","pending":true}],
+             "modified":[],"removed":[],"next_cursor":"cursor-1","has_more":false}
+            """ : """
+            {"added":[{"transaction_id":"tx_posted","account_id":"acc_check","amount":24.00,
+              "date":"2026-07-21","name":"Corner Cafe","merchant_name":"Corner Cafe","pending":false,
+              "pending_transaction_id":"tx_pending"}],
+             "modified":[],"removed":[{"transaction_id":"tx_pending"}],"next_cursor":"cursor-2","has_more":false}
+            """
+        return (Data(body.utf8), 200)
+    }
+}
+
 @Suite("Plaid sync & account privacy", .serialized)
 struct PlaidSyncTests {
     private func withApp(_ test: (Application) async throws -> Void) async throws {
@@ -376,6 +399,45 @@ struct PlaidSyncTests {
                 beforeRequest: { try $0.content.encode(AddReactionRequest(emoji: "🎉")) },
                 afterResponse: { res async throws in
                     #expect(try res.content.decode([TransactionReaction].self).isEmpty)
+                })
+        }
+    }
+
+    @Test("A pending charge that posts keeps its row, edits, and comments")
+    func pendingToPostedKeepsEdits() async throws {
+        try await withApp { app in
+            app.plaidTransport = PendingThenPostedTransport()
+            let alice = try await setupAliceWithData(app)
+            let pending = try #require(try await fetchTransactions(app, token: alice.token).first)
+            #expect(pending.status == .pending)
+            let dining = try #require(try await fetchCategories(app, token: alice.token).first { $0.name == "Shopping" })
+
+            try await app.testing().test(.PATCH, "v1/transactions/\(pending.id)", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateTransactionRequest(categoryID: dining.id, note: "tip")) },
+                afterResponse: { res async in #expect(res.status == .ok) })
+            try await app.testing().test(.POST, "v1/transactions/\(pending.id)/comments", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(AddCommentRequest(body: "coffee date")) },
+                afterResponse: { res async in #expect(res.status == .ok) })
+
+            // Plaid posts it: the webhook (unsigned in dev mode) runs the second sync page.
+            try await app.testing().test(.POST, "v1/plaid/webhook",
+                beforeRequest: { req in
+                    req.headers.contentType = .json
+                    req.body = .init(string: #"{"webhook_type":"TRANSACTIONS","item_id":"item-123"}"#)
+                }, afterResponse: { res async in #expect(res.status == .ok) })
+
+            let after = try await fetchTransactions(app, token: alice.token)
+            #expect(after.count == 1)
+            let posted = try #require(after.first)
+            #expect(posted.id == pending.id)
+            #expect(posted.status == .posted)
+            #expect(posted.amount == 24)
+            #expect(posted.categoryID == dining.id)
+            #expect(posted.note == "tip")
+            #expect(posted.plaidTransactionID == "tx_posted")
+            try await app.testing().test(.GET, "v1/transactions/\(pending.id)", headers: bearer(alice.token),
+                afterResponse: { res async throws in
+                    #expect(try res.content.decode(TransactionDetailResponse.self).comments.count == 1)
                 })
         }
     }

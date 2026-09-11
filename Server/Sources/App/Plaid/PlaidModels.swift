@@ -110,6 +110,9 @@ struct PlaidTransaction: Decodable {
     let name: String
     let merchantName: String?
     let pending: Bool
+    /// Set on a posted transaction that replaces a pending one; Plaid sends
+    /// the pending id in `removed` in the same sync.
+    let pendingTransactionId: String?
     let personalFinanceCategory: PlaidPFC?
 }
 
