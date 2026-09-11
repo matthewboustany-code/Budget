@@ -22,8 +22,14 @@ final class PushRegistrar {
     // access to guard against.
     private nonisolated(unsafe) var observer: NSObjectProtocol?
     /// The last token we successfully sent, so a relaunch with an unchanged
-    /// token doesn't re-POST on every foreground.
-    private var lastRegistered: String?
+    /// token doesn't re-POST on every foreground. Persisted: an in-memory copy
+    /// is empty after a relaunch, and sign-out then skipped the DELETE, leaving
+    /// a shared device on the previous user's reminders.
+    private var lastRegistered: String? {
+        get { UserDefaults.standard.string(forKey: Self.tokenKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.tokenKey) }
+    }
+    private static let tokenKey = "apnsToken"
 
     private(set) var authorizationDenied = false
 
