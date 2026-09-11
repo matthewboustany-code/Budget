@@ -8,6 +8,8 @@ struct AccountsView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var linkToken: String?
     @State private var showLink = false
+    /// Set while Link is open in update mode for this connection.
+    @State private var reconnecting: LinkedInstitution?
 
     private var store: AccountStore { env.accountStore }
     private var myMemberID: UUID? { env.session.member?.id }
@@ -19,13 +21,17 @@ struct AccountsView: View {
             } else {
                 List {
                     Section { NetWorthCard(netWorth: store.netWorth) }
+                    needsAttentionSection
                     accountSections
                 }
             }
         }
         .navigationTitle("Accounts")
         .toolbar { ToolbarItem(placement: .topBarTrailing) { linkMenu } }
-        .task { if store.isStale() { await store.load() } }
+        .task {
+            if store.isStale() { await store.load() }
+            await store.loadConnections()   // health changes independently of balances
+        }
         .refreshable { await store.load() }
         .overlay { if store.isLinking { ProgressView("Connecting…").padding().background(.regularMaterial, in: .rect(cornerRadius: 12)) } }
         .fullScreenCover(isPresented: $showLink) {
@@ -34,9 +40,14 @@ struct AccountsView: View {
                     linkToken: linkToken,
                     onSuccess: { publicToken in
                         showLink = false
-                        Task { await store.exchange(publicToken: publicToken, institutionName: nil) }
+                        if let connection = reconnecting {
+                            reconnecting = nil
+                            Task { await store.finishReconnect(connection) }
+                        } else {
+                            Task { await store.exchange(publicToken: publicToken, institutionName: nil) }
+                        }
                     },
-                    onExit: { showLink = false })
+                    onExit: { showLink = false; reconnecting = nil })
                 .ignoresSafeArea()
             }
         }
@@ -92,6 +103,41 @@ struct AccountsView: View {
                                onToggleVisibility: { toggleVisibility(account) },
                                onToggleHidden: { Task { await store.update(account, isHidden: false) } })
                 }
+            }
+        }
+    }
+
+    @ViewBuilder private var needsAttentionSection: some View {
+        if !store.needsAttention.isEmpty {
+            Section {
+                ForEach(store.needsAttention) { connection in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(connection.displayName)
+                            Text(connection.status.explanation)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Reconnect") { reconnect(connection) }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                    }
+                }
+            } header: {
+                Label("Needs attention", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            } footer: {
+                Text("These banks stopped syncing. Reconnecting signs in again and picks up where it left off.")
+            }
+        }
+    }
+
+    private func reconnect(_ connection: LinkedInstitution) {
+        Task {
+            if let token = await store.fetchUpdateLinkToken(for: connection) {
+                reconnecting = connection
+                linkToken = token
+                showLink = true
             }
         }
     }
@@ -200,6 +246,17 @@ private struct AccountRow: View {
 
 func currency(_ amount: Money, code: String = "USD") -> String {
     amount.formatted(.currency(code: code))
+}
+
+extension PlaidItemStatus {
+    var explanation: String {
+        switch self {
+        case .ok: return "Syncing normally"
+        case .error: return "Sign-in expired or needs an update"
+        case .pendingExpiration: return "Access expires soon — reconnect to avoid a gap"
+        case .revoked: return "Access was revoked at the bank"
+        }
+    }
 }
 
 extension AccountType {

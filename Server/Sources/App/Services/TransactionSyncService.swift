@@ -41,8 +41,17 @@ struct TransactionSyncService {
         var cursor = item.transactionsCursor
         var hasMore = true
         var pages = 0
+        let items = PlaidItemStore(db: db)
         while hasMore && pages < 50 {
-            let response = try await plaid.transactionsSync(accessToken: token, cursor: cursor)
+            let response: PlaidTransactionsSyncResponse
+            do {
+                response = try await plaid.transactionsSync(accessToken: token, cursor: cursor)
+            } catch {
+                // An expired login etc. — flag the item so the app can ask
+                // its owner to reconnect, instead of failing silently nightly.
+                try? await items.recordFailure(id: item.id, error)
+                throw error
+            }
             try await db.write { db in
                 // Added before removed: a posted transaction arrives in `added`
                 // with its pending predecessor in `removed`. Deleting first
@@ -69,8 +78,9 @@ struct TransactionSyncService {
             pages += 1
         }
         if let cursor {
-            try await PlaidItemStore(db: db).updateCursor(id: item.id, cursor: cursor)
+            try await items.updateCursor(id: item.id, cursor: cursor)
         }
+        try await items.markSynced(id: item.id)
 
         // Fresh transactions can reveal (or advance) recurring series.
         try await RecurringService(db: db).refresh(householdID: item.householdID)

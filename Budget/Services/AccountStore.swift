@@ -64,6 +64,36 @@ final class AccountStore {
         }
     }
 
+    /// Connections that stopped syncing, for the "Needs attention" section.
+    var needsAttention: [LinkedInstitution] { connections.filter(\.status.needsAttention) }
+
+    /// A Link token in update mode, to re-authenticate one connection.
+    func fetchUpdateLinkToken(for connection: LinkedInstitution) async -> String? {
+        do {
+            let response: LinkTokenResponse = try await api.post(
+                "v1/plaid/items/\(connection.id.uuidString)/update-link-token", body: Empty())
+            return response.linkToken
+        } catch {
+            errorMessage = friendly(error)
+            return nil
+        }
+    }
+
+    /// After update mode succeeds: sync that connection now (which clears its
+    /// error server-side), then reload. Update mode repairs the existing item,
+    /// so there's no public token to exchange.
+    func finishReconnect(_ connection: LinkedInstitution) async {
+        do {
+            let _: LinkedInstitution = try await api.post(
+                "v1/plaid/items/\(connection.id.uuidString)/sync", body: Empty())
+            errorMessage = nil
+        } catch {
+            errorMessage = friendly(error)
+        }
+        await loadConnections()
+        await load()
+    }
+
     /// Fetch a Plaid Link token to open Link on the device.
     func fetchLinkToken() async -> String? {
         do {

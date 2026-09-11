@@ -95,6 +95,28 @@ actor PendingThenPostedTransport: PlaidTransport {
     }
 }
 
+/// Fails /transactions/sync with ITEM_LOGIN_REQUIRED while `broken`, and keeps
+/// the last /link/token/create body so update mode's request can be checked.
+actor ItemHealthTransport: PlaidTransport {
+    private let inner = MockPlaidTransport()
+    private(set) var broken = false
+    private(set) var lastLinkTokenBody: Data?
+
+    func setBroken(_ value: Bool) { broken = value }
+
+    func post(url: URL, json: Data) async throws -> (data: Data, status: Int) {
+        switch url.path {
+        case "/link/token/create":
+            lastLinkTokenBody = json
+            return (Data(#"{"link_token":"link-sandbox-update","expiration":null}"#.utf8), 200)
+        case "/transactions/sync" where broken:
+            return (Data(#"{"error_type":"ITEM_ERROR","error_code":"ITEM_LOGIN_REQUIRED","error_message":"login required"}"#.utf8), 400)
+        default:
+            return try await inner.post(url: url, json: json)
+        }
+    }
+}
+
 @Suite("Plaid sync & account privacy", .serialized)
 struct PlaidSyncTests {
     private func withApp(_ test: (Application) async throws -> Void) async throws {
@@ -431,6 +453,96 @@ struct PlaidSyncTests {
                 afterResponse: { res async throws in
                     #expect(try res.content.decode([TransactionReaction].self).isEmpty)
                 })
+        }
+    }
+
+    // MARK: - Item health
+
+    private func postWebhook(_ app: Application, _ json: String) async throws {
+        try await app.testing().test(.POST, "v1/plaid/webhook",
+            beforeRequest: { req in
+                req.headers.contentType = .json
+                req.body = .init(string: json)
+            }, afterResponse: { res async in #expect(res.status == .ok) })
+    }
+
+    private func connections(_ app: Application, token: String) async throws -> [LinkedInstitution] {
+        var out: [LinkedInstitution] = []
+        try await app.testing().test(.GET, "v1/plaid/items", headers: bearer(token),
+            afterResponse: { res async throws in out = try res.content.decode([LinkedInstitution].self) })
+        return out
+    }
+
+    @Test("ITEM webhooks set a connection's health, and LOGIN_REPAIRED clears it")
+    func itemWebhooksSetHealth() async throws {
+        try await withApp { app in
+            let alice = try await setupAliceWithData(app)
+            #expect(try await connections(app, token: alice.token).first?.status == .ok)
+
+            try await postWebhook(app, #"{"webhook_type":"ITEM","webhook_code":"ERROR","item_id":"item-123","error":{"error_code":"ITEM_LOGIN_REQUIRED"}}"#)
+            let broken = try #require(try await connections(app, token: alice.token).first)
+            #expect(broken.status == .error)
+            #expect(broken.errorCode == "ITEM_LOGIN_REQUIRED")
+
+            try await postWebhook(app, #"{"webhook_type":"ITEM","webhook_code":"PENDING_EXPIRATION","item_id":"item-123"}"#)
+            #expect(try await connections(app, token: alice.token).first?.status == .pendingExpiration)
+
+            try await postWebhook(app, #"{"webhook_type":"ITEM","webhook_code":"LOGIN_REPAIRED","item_id":"item-123"}"#)
+            let repaired = try #require(try await connections(app, token: alice.token).first)
+            #expect(repaired.status == .ok)
+            #expect(repaired.errorCode == nil)
+        }
+    }
+
+    @Test("A sync Plaid rejects for login flags the item; a good sync clears it")
+    func failedSyncFlagsItem() async throws {
+        try await withApp { app in
+            let transport = ItemHealthTransport()
+            app.plaidTransport = transport
+            let alice = try await setupAliceWithData(app)
+            let item = try #require(try await connections(app, token: alice.token).first)
+            #expect(item.lastSyncedAt != nil)   // the link's initial sync succeeded
+
+            await transport.setBroken(true)
+            try await postWebhook(app, #"{"webhook_type":"TRANSACTIONS","item_id":"item-123"}"#)
+            let flagged = try #require(try await connections(app, token: alice.token).first)
+            #expect(flagged.status == .error)
+            #expect(flagged.errorCode == "ITEM_LOGIN_REQUIRED")
+
+            // The owner reconnects; the app then asks for an immediate sync.
+            await transport.setBroken(false)
+            try await app.testing().test(.POST, "v1/plaid/items/\(item.id)/sync", headers: bearer(alice.token),
+                afterResponse: { res async throws in
+                    #expect(res.status == .ok)
+                    let fresh = try res.content.decode(LinkedInstitution.self)
+                    #expect(fresh.status == .ok)
+                    #expect(fresh.errorCode == nil)
+                })
+        }
+    }
+
+    @Test("Update-mode link tokens carry the access token, no products, and are owner-only")
+    func updateModeLinkToken() async throws {
+        try await withApp { app in
+            let transport = ItemHealthTransport()
+            app.plaidTransport = transport
+            let alice = try await setupAliceWithData(app)
+            let bob = try await addBob(app, aliceToken: alice.token)
+            let item = try #require(try await connections(app, token: alice.token).first)
+
+            try await app.testing().test(.POST, "v1/plaid/items/\(item.id)/update-link-token", headers: bearer(alice.token),
+                afterResponse: { res async throws in
+                    #expect(res.status == .ok)
+                    #expect(try res.content.decode(LinkTokenResponse.self).linkToken == "link-sandbox-update")
+                })
+            let body = try #require(await transport.lastLinkTokenBody)
+            let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+            #expect(json["products"] == nil)
+            #expect(json["access_token"] as? String == "access-sandbox-xyz")
+
+            // The partner can't mint one for Alice's connection — and gets 404, not 403.
+            try await app.testing().test(.POST, "v1/plaid/items/\(item.id)/update-link-token", headers: bearer(bob.token),
+                afterResponse: { res async in #expect(res.status == .notFound) })
         }
     }
 

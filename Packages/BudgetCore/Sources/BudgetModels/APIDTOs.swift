@@ -443,13 +443,51 @@ public struct RegisterDeviceRequest: Codable, Sendable {
 }
 
 /// One linked institution, for the disconnect UI in Settings.
+/// Health of a linked institution. Anything but `.ok` means syncing has
+/// stopped until the owner reconnects through Link's update mode.
+public enum PlaidItemStatus: String, Codable, Sendable, Hashable {
+    case ok
+    /// Plaid rejected the item, e.g. ITEM_LOGIN_REQUIRED.
+    case error
+    /// Consent is about to lapse; reconnecting now avoids a gap.
+    case pendingExpiration = "pending_expiration"
+    /// The user revoked access at the bank.
+    case revoked
+
+    public var needsAttention: Bool { self != .ok }
+}
+
 public struct LinkedInstitution: Codable, Identifiable, Sendable, Hashable {
     public let id: UUID
     public let institutionName: String?
+    public let status: PlaidItemStatus
+    /// Plaid's error code when `status == .error`.
+    public let errorCode: String?
+    public let lastSyncedAt: Date?
 
-    public init(id: UUID, institutionName: String?) {
+    public init(id: UUID, institutionName: String?, status: PlaidItemStatus = .ok,
+                errorCode: String? = nil, lastSyncedAt: Date? = nil) {
         self.id = id
         self.institutionName = institutionName
+        self.status = status
+        self.errorCode = errorCode
+        self.lastSyncedAt = lastSyncedAt
+    }
+
+    /// Tolerates older servers (no health fields → `.ok`). An unknown status
+    /// from a newer one reads as `.error`: better to ask for a reconnect than
+    /// to hide a broken connection.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        institutionName = try c.decodeIfPresent(String.self, forKey: .institutionName)
+        if let raw = try c.decodeIfPresent(String.self, forKey: .status) {
+            status = PlaidItemStatus(rawValue: raw) ?? .error
+        } else {
+            status = .ok
+        }
+        errorCode = try c.decodeIfPresent(String.self, forKey: .errorCode)
+        lastSyncedAt = try c.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
     }
 
     public var displayName: String { institutionName ?? "Connected account" }

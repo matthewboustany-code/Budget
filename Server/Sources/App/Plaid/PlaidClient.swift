@@ -57,14 +57,20 @@ struct PlaidClient: Sendable {
     /// to bring them back. Without it those institutions simply fail in Link
     /// while smaller ones keep working — a confusing partial failure, which is
     /// why this is wired up before it is needed rather than after.
+    ///
+    /// Passing `accessToken` creates the token in **update mode**, which repairs
+    /// an existing item (ITEM_LOGIN_REQUIRED) rather than linking a new one.
+    /// `products` is then omitted entirely: Plaid rejects it in update mode.
     func createLinkToken(clientUserId: String, clientName: String,
                          products: [String], webhook: String?,
-                         redirectUri: String? = nil) async throws -> PlaidLinkTokenCreateResponse {
+                         redirectUri: String? = nil,
+                         accessToken: String? = nil) async throws -> PlaidLinkTokenCreateResponse {
         try await call("/link/token/create", PlaidLinkTokenCreateRequest(
             clientId: clientId, secret: secret, clientName: clientName,
             language: "en", countryCodes: ["US"],
             user: .init(clientUserId: clientUserId),
-            products: products, webhook: webhook, redirectUri: redirectUri))
+            products: accessToken == nil ? products : nil,
+            webhook: webhook, redirectUri: redirectUri, accessToken: accessToken))
     }
 
     func exchangePublicToken(_ publicToken: String) async throws -> PlaidExchangeResponse {

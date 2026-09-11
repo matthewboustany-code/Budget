@@ -295,6 +295,19 @@ extension AppDatabase {
                 """)
         }
 
+        // Item health. A bank that expires its consent (ITEM_LOGIN_REQUIRED —
+        // the most common Plaid production failure) used to fail every nightly
+        // sync with a log line and nothing in the app. `status` is one of
+        // PlaidItemStatus's raw values; `error_code` is Plaid's code.
+        migrator.registerMigration("v8_plaid_item_health") { db in
+            try db.execute(sql: """
+                ALTER TABLE plaid_items ADD COLUMN status TEXT NOT NULL DEFAULT 'ok';
+                ALTER TABLE plaid_items ADD COLUMN error_code TEXT;
+                ALTER TABLE plaid_items ADD COLUMN last_synced_at TEXT;
+                ALTER TABLE plaid_items ADD COLUMN last_error_at TEXT;
+                """)
+        }
+
         return migrator
     }
 }
