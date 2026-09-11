@@ -129,7 +129,8 @@ Caddy auto-TLS), `Caddyfile`, `scripts/sync-cron.sh`, `scripts/backup-db.sh`,
 
 | File | Contents |
 |---|---|
-| `APIClient.swift` | The single bearer-authenticated HTTP client (ISO8601, typed errors). |
+| `APIClient.swift` | The single bearer-authenticated HTTP client (ISO8601, typed errors); central 401 → sign-out. |
+| `ResponseCache.swift` | Last-good JSON per GET in Application Support; stores prefill from it at init. Cleared on sign-out. |
 | `Keychain.swift` / `ServerConfig.swift` / `LaunchArgs.swift` | Token storage; base-URL resolution; DEBUG scripted-launch flags. |
 | `AuthStore` / `HouseholdStore` | Sign in with Apple (+ dev sign-in), household create/join/invite. |
 | `AccountStore` | Accounts + net worth; Plaid link-token/exchange/sandbox. |

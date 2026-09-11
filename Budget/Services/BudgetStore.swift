@@ -23,31 +23,45 @@ final class BudgetStore {
     private var budgetByCategory: [UUID: Budget] = [:]
     private var progressByCategory: [UUID: BudgetProgress] = [:]
 
-    init(api: APIClient) { self.api = api }
+    init(api: APIClient) {
+        self.api = api
+        // This month as last seen, for both the Budget tab and the dashboard.
+        if let cached: BudgetMonthResponse = api.cached("v1/budgets", query: Self.query(for: month)) {
+            apply(cached)
+            currentRollup = cached.rollup
+        }
+    }
+
+    private static func query(for month: Month) -> [URLQueryItem] {
+        [.init(name: "month", value: month.description)]
+    }
 
     func load() async {
         isLoading = true
         defer { isLoading = false }
         do {
-            let response: BudgetMonthResponse = try await api.get(
-                "v1/budgets", query: [.init(name: "month", value: month.description)])
-            budgets = response.budgets
-            rollup = response.rollup
-            budgetByCategory = Dictionary(budgets.map { ($0.categoryID, $0) },
-                                          uniquingKeysWith: { first, _ in first })
-            progressByCategory = Dictionary(response.rollup.entries.map { ($0.categoryID, $0) },
-                                            uniquingKeysWith: { first, _ in first })
+            let response: BudgetMonthResponse = try await api.get("v1/budgets", query: Self.query(for: month))
+            apply(response)
             errorMessage = nil
         } catch {
             errorMessage = friendly(error)
         }
     }
 
+    private func apply(_ response: BudgetMonthResponse) {
+        budgets = response.budgets
+        rollup = response.rollup
+        budgetByCategory = Dictionary(budgets.map { ($0.categoryID, $0) },
+                                      uniquingKeysWith: { first, _ in first })
+        progressByCategory = Dictionary(response.rollup.entries.map { ($0.categoryID, $0) },
+                                        uniquingKeysWith: { first, _ in first })
+    }
+
     @discardableResult
     func loadCurrentMonth() async -> MonthBudget? {
         do {
             let response: BudgetMonthResponse = try await api.get(
-                "v1/budgets", query: [.init(name: "month", value: Month(date: Date()).description)])
+                "v1/budgets", query: Self.query(for: Month(date: Date())))
             currentRollup = response.rollup
         } catch {
             errorMessage = friendly(error)

@@ -44,6 +44,8 @@ final class AppEnvironment {
         // One place turns an expired session into a sign-out, whichever
         // request discovers it.
         api.onUnauthorized = { [weak session] in session?.signOut() }
+        // Changing the server URL signs out too, so this covers both.
+        session.onSignOut = { [weak api] in api?.cache.clear() }
     }
 
     /// The server was unreachable at the last `/me`; the UI is running on the

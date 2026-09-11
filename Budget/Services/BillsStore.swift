@@ -15,7 +15,17 @@ final class BillsStore {
     var isLoading = false
     var errorMessage: String?
 
-    init(api: APIClient) { self.api = api }
+    init(api: APIClient) {
+        self.api = api
+        // Last-known series and bills for the first frame; `load()` refreshes.
+        series = api.cached("v1/recurring") ?? []
+        let cachedBills: UpcomingBillsResponse? = api.cached("v1/bills/upcoming", query: Self.billsQuery())
+        bills = cachedBills?.bills ?? []
+    }
+
+    private static func billsQuery() -> [URLQueryItem] {
+        [.init(name: "today", value: dayFormatter.string(from: Date()))]
+    }
 
     func load() async {
         isLoading = true
@@ -72,9 +82,7 @@ final class BillsStore {
     /// Upcoming bills anchored on the device's calendar day — the server's
     /// own "today" is UTC, a day ahead every US evening.
     private func fetchBills() async throws -> [Bill] {
-        let day = Self.dayFormatter.string(from: Date())
-        let response: UpcomingBillsResponse = try await api.get(
-            "v1/bills/upcoming", query: [.init(name: "today", value: day)])
+        let response: UpcomingBillsResponse = try await api.get("v1/bills/upcoming", query: Self.billsQuery())
         return response.bills
     }
 

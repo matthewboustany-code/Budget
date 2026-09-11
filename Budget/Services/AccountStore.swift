@@ -14,7 +14,12 @@ final class AccountStore {
     var isLinking = false
     var errorMessage: String?
 
-    init(api: APIClient) { self.api = api }
+    init(api: APIClient) {
+        self.api = api
+        // Last-known data for the first frame; `load()` refreshes it.
+        accounts = api.cached("v1/accounts") ?? []
+        netWorth = api.cached("v1/networth")
+    }
 
     func load() async {
         isLoading = true

@@ -19,6 +19,8 @@ final class APIClient {
     /// Apple token, not an expired session). Set by `AppEnvironment` to sign
     /// out, so no store has to remember to check.
     var onUnauthorized: (() -> Void)?
+    /// Last-good GET responses; written on every successful GET.
+    let cache: ResponseCache
 
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -33,10 +35,27 @@ final class APIClient {
 
     init(baseURL: URL? = nil,
          session: URLSession = .shared,
+         cache: ResponseCache? = nil,
          tokenProvider: @escaping () -> String?) {
         self.pinnedBaseURL = baseURL
         self.session = session
+        // Built here, not as a default argument: defaults are evaluated
+        // outside the main actor, and ResponseCache is main-actor isolated.
+        self.cache = cache ?? ResponseCache()
         self.tokenProvider = tokenProvider
+    }
+
+    /// The last successful response for this exact GET, if one is cached.
+    /// Synchronous on purpose: stores call it in `init` so the first frame
+    /// has data.
+    func cached<Response: Decodable>(_ path: String, query: [URLQueryItem] = []) -> Response? {
+        let key = ResponseCache.key(path: Self.normalized(path), query: query)
+        guard let data = cache.data(for: key) else { return nil }
+        return try? decoder.decode(Response.self, from: data)
+    }
+
+    private static func normalized(_ path: String) -> String {
+        path.hasPrefix("/") ? String(path.dropFirst()) : path
     }
 
     // MARK: - Verbs
@@ -111,7 +130,11 @@ final class APIClient {
         if Response.self == Empty.self { return Empty() as! Response }
         if data.isEmpty { throw APIClientError.decoding("Empty response body") }
         do {
-            return try decoder.decode(Response.self, from: data)
+            let value = try decoder.decode(Response.self, from: data)
+            // Cache only after a clean decode, so a malformed body never
+            // becomes the next launch's first frame.
+            if method == "GET" { cache.store(data, for: ResponseCache.key(path: trimmedPath, query: query)) }
+            return value
         } catch {
             throw APIClientError.decoding(String(describing: error))
         }

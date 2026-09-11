@@ -14,7 +14,14 @@ final class TransactionStore {
     var errorMessage: String?
     private(set) var nextCursor: String?
 
-    init(api: APIClient) { self.api = api }
+    init(api: APIClient) {
+        self.api = api
+        // The unfiltered first page, as last seen; `load()` refreshes it.
+        if let page: TransactionPage = api.cached("v1/transactions") {
+            transactions = page.transactions
+            nextCursor = page.nextCursor
+        }
+    }
 
     var canLoadMore: Bool { nextCursor != nil }
 

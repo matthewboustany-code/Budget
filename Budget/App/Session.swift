@@ -67,7 +67,12 @@ final class Session {
         }
     }
 
+    /// Runs on every sign-out; `AppEnvironment` uses it to clear the
+    /// response cache so the next user never sees this one's data.
+    var onSignOut: (() -> Void)?
+
     func signOut() {
+        onSignOut?()
         keychain.delete(tokenAccount)
         UserDefaults.standard.removeObject(forKey: Self.cachedMeKey)
         user = nil
