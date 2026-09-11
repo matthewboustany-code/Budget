@@ -7,6 +7,8 @@ import SwiftUI
 struct RootTabView: View {
     enum TabID: String, Hashable { case home, accounts, transactions, budget, settings }
 
+    @Environment(AppEnvironment.self) private var env
+
     @State private var selection: TabID = LaunchArgs.value(for: "-startTab")
         .flatMap(TabID.init(rawValue:)) ?? .home
 
@@ -29,5 +31,20 @@ struct RootTabView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if env.isOffline {
+                Button {
+                    Task { await env.householdStore.refresh() }
+                } label: {
+                    Label("Offline — showing saved data. Tap to retry.", systemImage: "wifi.slash")
+                        .font(.footnote)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+                .background(.orange.opacity(0.9))
+                .foregroundStyle(.white)
+            }
+        }
     }
 }

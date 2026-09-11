@@ -15,6 +15,10 @@ final class APIClient {
     private let pinnedBaseURL: URL?
     private var baseURL: URL { pinnedBaseURL ?? ServerConfig.baseURL }
     private let tokenProvider: () -> String?
+    /// Called on any 401 except from sign-in itself (where 401 means a bad
+    /// Apple token, not an expired session). Set by `AppEnvironment` to sign
+    /// out, so no store has to remember to check.
+    var onUnauthorized: (() -> Void)?
 
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -96,6 +100,7 @@ final class APIClient {
             throw APIClientError.transport("No HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 401 && trimmedPath != "v1/auth/apple" { onUnauthorized?() }
             if let apiError = try? decoder.decode(APIErrorResponse.self, from: data) {
                 throw APIClientError.server(status: http.statusCode, reason: apiError.reason)
             }

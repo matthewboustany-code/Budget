@@ -13,20 +13,26 @@ final class HouseholdStore {
     var errorMessage: String?
     /// The most recently generated invite, shown for the user to share.
     var latestInvite: InviteResponse?
+    /// The last `/me` failed for a reason other than auth. The session keeps
+    /// its cached household, so the app stays usable and shows a banner.
+    private(set) var isOffline = false
 
     init(api: APIClient, session: Session) {
         self.api = api
         self.session = session
     }
 
-    /// Refresh identity + household from `/me`. Signs out on 401.
+    /// Refresh identity + household from `/me`. A 401 signs out via the
+    /// client's `onUnauthorized`; any other failure keeps the cached household.
     func refresh() async {
         do {
             let me: MeResponse = try await api.get("v1/me")
             session.apply(me)
+            isOffline = false
         } catch let error as APIClientError where error.isUnauthorized {
-            session.signOut()
+            isOffline = false
         } catch {
+            isOffline = true
             errorMessage = error.localizedDescription
         }
     }

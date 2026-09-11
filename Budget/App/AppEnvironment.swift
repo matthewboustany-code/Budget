@@ -41,7 +41,14 @@ final class AppEnvironment {
         self.goalsStore = GoalsStore(api: api)
         self.reportsStore = ReportsStore(api: api)
         self.pushRegistrar = PushRegistrar(api: api)
+        // One place turns an expired session into a sign-out, whichever
+        // request discovers it.
+        api.onUnauthorized = { [weak session] in session?.signOut() }
     }
+
+    /// The server was unreachable at the last `/me`; the UI is running on the
+    /// cached household.
+    var isOffline: Bool { householdStore.isOffline }
 
     /// On launch, if a session token exists, refresh identity + household from
     /// the server (signs out on 401). In DEBUG, honors scripted launch args.
