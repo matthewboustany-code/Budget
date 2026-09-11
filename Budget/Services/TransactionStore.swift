@@ -57,6 +57,32 @@ final class TransactionStore {
         }
     }
 
+    /// Adds a transaction to a manual account, then reloads the first page.
+    @discardableResult
+    func addManual(_ request: CreateTransactionRequest) async -> Bool {
+        do {
+            let _: Transaction = try await api.post("v1/transactions", body: request)
+            await load()
+            return true
+        } catch {
+            errorMessage = friendly(error)
+            return false
+        }
+    }
+
+    /// Deletes a manual-account transaction (the server refuses Plaid ones).
+    @discardableResult
+    func delete(_ tx: Transaction) async -> Bool {
+        do {
+            try await api.delete("v1/transactions/\(tx.id.uuidString)")
+            transactions.removeAll { $0.id == tx.id }
+            return true
+        } catch {
+            errorMessage = friendly(error)
+            return false
+        }
+    }
+
     func detail(_ id: UUID) async -> TransactionDetailResponse? {
         do { return try await api.get("v1/transactions/\(id.uuidString)") }
         catch { errorMessage = friendly(error); return nil }

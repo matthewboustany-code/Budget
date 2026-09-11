@@ -143,7 +143,8 @@ Caddy auto-TLS), `Caddyfile`, `scripts/sync-cron.sh`, `scripts/backup-db.sh`,
 
 `Onboarding` (sign-in → create/join household), `Dashboard` (Monarch-style
 home: net-worth sparkline, cash flow, budget bar, due-soon bills),
-`Accounts`, `Transactions` (list + detail with comments/reactions),
+`Accounts` (incl. "Needs attention" reconnect and `ManualEntrySheets.swift` for
+manual accounts/transactions), `Transactions` (list + detail with comments/reactions),
 `Budget` (month switcher, budget-vs-actual, set-budget sheet),
 `Bills` (Upcoming/Recurring segments, series toggles), `Goals` (progress
 list, detail + contribution ledger, create/edit sheets),

@@ -64,6 +64,19 @@ final class AccountStore {
         }
     }
 
+    /// Creates a manual account (cash, an unsupported bank) and reloads.
+    @discardableResult
+    func createManualAccount(_ request: CreateManualAccountRequest) async -> Bool {
+        do {
+            let _: Account = try await api.post("v1/accounts", body: request)
+            await load()
+            return true
+        } catch {
+            errorMessage = friendly(error)
+            return false
+        }
+    }
+
     /// Pull fresh balances and transactions from every bank the caller linked,
     /// right now. Rate-limited server-side; returns false if refused or failed.
     @discardableResult

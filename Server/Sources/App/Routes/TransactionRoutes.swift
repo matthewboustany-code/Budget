@@ -55,6 +55,52 @@ func registerTransactionRoutes(_ routes: RoutesBuilder) {
         return try await req.transactions.get(id: tx.id) ?? tx
     }
 
+    // POST /v1/transactions — add to a manual account. Linked accounts are
+    // bank-owned (400); only the account's owner may add, the same rule as
+    // editing the account itself.
+    txs.post { req async throws -> Transaction in
+        let (household, member) = try await req.requireMembership()
+        let body = try req.content.decode(CreateTransactionRequest.self)
+        guard let account = try await req.accounts.get(id: body.accountID),
+              account.householdID == household.id,
+              account.visibility == .shared || account.ownerMemberID == member.id else {
+            throw Abort(.notFound, reason: "Account not found")
+        }
+        guard account.isManual else {
+            throw Abort(.badRequest, reason: "Transactions on linked accounts come from the bank.")
+        }
+        guard account.ownerMemberID == member.id else {
+            throw Abort(.forbidden, reason: "Only the account owner can add to it.")
+        }
+        let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw Abort(.badRequest, reason: "Name can't be empty.") }
+        if let categoryID = body.categoryID {
+            guard let category = try await req.categories.get(id: categoryID),
+                  category.householdID == household.id else {
+                throw Abort(.notFound, reason: "Category not found")
+            }
+        }
+        let tx = Transaction(id: UUID(), householdID: household.id, accountID: account.id,
+                             ownerMemberID: account.ownerMemberID, amount: body.amount, date: body.date,
+                             name: name, merchantName: name, categoryID: body.categoryID,
+                             note: body.note, visibility: account.visibility, createdAt: Date())
+        try await req.transactions.insertManual(tx)
+        return tx
+    }
+
+    // DELETE /v1/transactions/:id — manual accounts only, owner only.
+    txs.delete(":id") { req async throws -> HTTPStatus in
+        let (tx, member) = try await loadVisible(req)
+        guard let account = try await req.accounts.get(id: tx.accountID), account.isManual else {
+            throw Abort(.badRequest, reason: "Transactions on linked accounts come from the bank and can't be deleted.")
+        }
+        guard account.ownerMemberID == member.id else {
+            throw Abort(.forbidden, reason: "Only the account owner can delete it.")
+        }
+        try await req.transactions.delete(id: tx.id)
+        return .noContent
+    }
+
     // POST /v1/transactions/:id/comments
     txs.post(":id", "comments") { req async throws -> TransactionComment in
         let (tx, member) = try await loadVisible(req)

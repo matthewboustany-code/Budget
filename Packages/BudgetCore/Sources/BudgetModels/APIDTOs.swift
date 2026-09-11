@@ -184,10 +184,48 @@ public struct UpdateAccountRequest: Codable, Sendable {
     public var name: String?
     public var visibility: Visibility?
     public var isHidden: Bool?
-    public init(name: String? = nil, visibility: Visibility? = nil, isHidden: Bool? = nil) {
+    /// Manual accounts only; a linked account's balance comes from the bank.
+    public var currentBalance: Money?
+    public init(name: String? = nil, visibility: Visibility? = nil, isHidden: Bool? = nil,
+                currentBalance: Money? = nil) {
         self.name = name
         self.visibility = visibility
         self.isHidden = isHidden
+        self.currentBalance = currentBalance
+    }
+}
+
+/// `POST /v1/accounts`: a manual account. Plaid accounts only come from linking.
+public struct CreateManualAccountRequest: Codable, Sendable {
+    public var name: String
+    public var type: AccountType
+    public var visibility: Visibility
+    public var currentBalance: Money
+    public init(name: String, type: AccountType, visibility: Visibility = .shared, currentBalance: Money) {
+        self.name = name
+        self.type = type
+        self.visibility = visibility
+        self.currentBalance = currentBalance
+    }
+}
+
+/// `POST /v1/transactions`: a transaction on a manual account. Outflows are
+/// positive and inflows negative, the same convention as Plaid's.
+public struct CreateTransactionRequest: Codable, Sendable {
+    public var accountID: UUID
+    public var amount: Money
+    public var date: Date
+    public var name: String
+    public var categoryID: UUID?
+    public var note: String?
+    public init(accountID: UUID, amount: Money, date: Date, name: String,
+                categoryID: UUID? = nil, note: String? = nil) {
+        self.accountID = accountID
+        self.amount = amount
+        self.date = date
+        self.name = name
+        self.categoryID = categoryID
+        self.note = note
     }
 }
 

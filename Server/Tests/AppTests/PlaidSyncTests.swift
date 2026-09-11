@@ -546,6 +546,74 @@ struct PlaidSyncTests {
         }
     }
 
+    @Test("Manual accounts: create, set a balance, add and delete transactions; Plaid rows stay bank-owned")
+    func manualAccounts() async throws {
+        try await withApp { app in
+            let alice = try await setupAliceWithData(app)
+            let bob = try await addBob(app, aliceToken: alice.token)
+
+            var created: Account?
+            try await app.testing().test(.POST, "v1/accounts", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(CreateManualAccountRequest(name: "Wallet", type: .cash, currentBalance: 80)) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .ok)
+                    created = try res.content.decode(Account.self)
+                })
+            let wallet = try #require(created)
+            #expect(wallet.isManual)
+
+            // Net worth counts it: 1200.50 checking − 410 card + 80 cash.
+            try await app.testing().test(.GET, "v1/networth", headers: bearer(alice.token),
+                afterResponse: { res async throws in
+                    #expect(try res.content.decode(NetWorthResponse.self).current.net == Decimal(string: "870.50"))
+                })
+
+            // Balances: settable on a manual account, never on a linked one.
+            try await app.testing().test(.PATCH, "v1/accounts/\(wallet.id)", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateAccountRequest(currentBalance: 95)) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .ok)
+                    #expect(try res.content.decode(Account.self).currentBalance == 95)
+                })
+            var linked: [Account] = []
+            try await app.testing().test(.GET, "v1/accounts", headers: bearer(alice.token),
+                afterResponse: { res async throws in linked = try res.content.decode([Account].self) })
+            let checking = try #require(linked.first { $0.type == .checking && !$0.isManual })
+            try await app.testing().test(.PATCH, "v1/accounts/\(checking.id)", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateAccountRequest(currentBalance: 1)) },
+                afterResponse: { res async in #expect(res.status == .badRequest) })
+
+            // Transactions: on the wallet yes; on a linked account no; the partner no.
+            var added: BudgetModels.Transaction?
+            try await app.testing().test(.POST, "v1/transactions", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(CreateTransactionRequest(
+                    accountID: wallet.id, amount: 12, date: Date(), name: "Farmers market")) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .ok)
+                    added = try res.content.decode(BudgetModels.Transaction.self)
+                })
+            let manualTx = try #require(added)
+            try await app.testing().test(.POST, "v1/transactions", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(CreateTransactionRequest(
+                    accountID: checking.id, amount: 5, date: Date(), name: "Sneaky")) },
+                afterResponse: { res async in #expect(res.status == .badRequest) })
+            try await app.testing().test(.POST, "v1/transactions", headers: bearer(bob.token),
+                beforeRequest: { try $0.content.encode(CreateTransactionRequest(
+                    accountID: wallet.id, amount: 5, date: Date(), name: "Not mine")) },
+                afterResponse: { res async in #expect(res.status == .forbidden) })
+            #expect(try await fetchTransactions(app, token: alice.token).contains { $0.id == manualTx.id })
+
+            // Delete: the manual one goes; a Plaid one can't.
+            try await app.testing().test(.DELETE, "v1/transactions/\(manualTx.id)", headers: bearer(alice.token),
+                afterResponse: { res async in #expect(res.status == .noContent) })
+            let remaining = try await fetchTransactions(app, token: alice.token)
+            #expect(!remaining.contains { $0.id == manualTx.id })
+            let plaidTx = try #require(remaining.first { $0.plaidTransactionID != nil })
+            try await app.testing().test(.DELETE, "v1/transactions/\(plaidTx.id)", headers: bearer(alice.token),
+                afterResponse: { res async in #expect(res.status == .badRequest) })
+        }
+    }
+
     @Test("Sync now pulls the caller's connections, and is rate-limited per user")
     func syncNowIsRateLimited() async throws {
         try await withApp { app in

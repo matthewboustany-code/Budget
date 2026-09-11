@@ -10,6 +10,9 @@ struct AccountsView: View {
     @State private var showLink = false
     /// Set while Link is open in update mode for this connection.
     @State private var reconnecting: LinkedInstitution?
+    @State private var showManualAccount = false
+    /// The manual account a transaction is being added to.
+    @State private var addingTo: Account?
 
     private var store: AccountStore { env.accountStore }
     private var myMemberID: UUID? { env.session.member?.id }
@@ -27,6 +30,12 @@ struct AccountsView: View {
             }
         }
         .navigationTitle("Accounts")
+        .sheet(isPresented: $showManualAccount) {
+            ManualAccountSheet().presentationDetents([.medium, .large])
+        }
+        .sheet(item: $addingTo) { account in
+            ManualTransactionSheet(account: account).presentationDetents([.large])
+        }
         .toolbar { ToolbarItem(placement: .topBarTrailing) { linkMenu } }
         .task {
             if store.isStale() { await store.load() }
@@ -56,6 +65,9 @@ struct AccountsView: View {
     private var linkMenu: some View {
         Menu {
             Button { connectBank() } label: { Label("Connect a bank", systemImage: "link") }
+            Button { showManualAccount = true } label: {
+                Label("Add manual account", systemImage: "square.and.pencil")
+            }
             #if DEBUG
             Button { Task { await store.linkSandbox() } } label: {
                 Label("Link sandbox account (dev)", systemImage: "ladybug")
@@ -74,6 +86,7 @@ struct AccountsView: View {
         } actions: {
             Button("Connect a bank", action: connectBank)
                 .buttonStyle(.borderedProminent)
+            Button("Add a manual account") { showManualAccount = true }
             #if DEBUG
             Button("Link sandbox account (dev)") { Task { await store.linkSandbox() } }
                 .font(.footnote)
@@ -90,7 +103,8 @@ struct AccountsView: View {
                     AccountRow(account: account,
                                canEdit: account.ownerMemberID == myMemberID,
                                onToggleVisibility: { toggleVisibility(account) },
-                               onToggleHidden: { Task { await store.update(account, isHidden: !account.isHidden) } })
+                               onToggleHidden: { Task { await store.update(account, isHidden: !account.isHidden) } },
+                               onAddTransaction: { addingTo = account })
                 }
             }
         }
@@ -209,6 +223,8 @@ private struct AccountRow: View {
     let canEdit: Bool
     let onToggleVisibility: () -> Void
     let onToggleHidden: () -> Void
+    /// Offered for manual accounts only; Plaid transactions come from the bank.
+    var onAddTransaction: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -225,6 +241,8 @@ private struct AccountRow: View {
                 if let institution = account.institutionName {
                     Text(account.mask.map { "\(institution) ••\($0)" } ?? institution)
                         .font(.caption).foregroundStyle(.secondary)
+                } else if account.isManual {
+                    Text("Manual").font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer()
@@ -243,6 +261,11 @@ private struct AccountRow: View {
                     account.isHidden
                         ? Label("Unhide", systemImage: "eye")
                         : Label("Hide", systemImage: "eye.slash")
+                }
+                if account.isManual, let onAddTransaction {
+                    Button { onAddTransaction() } label: {
+                        Label("Add transaction", systemImage: "plus.circle")
+                    }
                 }
             }
         }

@@ -22,6 +22,8 @@ extension ExchangePublicTokenRequest: @retroactive Content {}
 extension LinkedInstitution: @retroactive Content {}
 extension SandboxLinkRequest: @retroactive Content {}
 extension UpdateAccountRequest: @retroactive Content {}
+extension CreateManualAccountRequest: @retroactive Content {}
+extension CreateTransactionRequest: @retroactive Content {}
 extension NetWorthResponse: @retroactive Content {}
 
 // Transactions, categories & couples layer (P3)

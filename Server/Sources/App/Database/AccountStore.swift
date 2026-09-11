@@ -36,8 +36,34 @@ struct AccountStore {
         }
     }
 
-    func update(id: UUID, name: String?, visibility: Visibility?, isHidden: Bool?) async throws {
+    /// A manual account (cash, an unsupported bank, a loan to a friend): no
+    /// Plaid item, and its balance is whatever its owner says.
+    func createManual(householdID: UUID, ownerMemberID: UUID,
+                      _ body: CreateManualAccountRequest) async throws -> Account {
+        let account = Account(id: UUID(), householdID: householdID, ownerMemberID: ownerMemberID,
+                              name: body.name, type: body.type, currentBalance: body.currentBalance,
+                              visibility: body.visibility, isManual: true, createdAt: Date())
         try await db.write { db in
+            try db.execute(sql: """
+                INSERT INTO accounts (id, household_id, owner_member_id, name, type, current_balance,
+                    currency_code, visibility, is_hidden, is_manual, created_at)
+                VALUES (?,?,?,?,?,?,?,?,0,1,?)
+                """, arguments: [account.id.uuidString, householdID.uuidString, ownerMemberID.uuidString,
+                                 account.name, account.type.rawValue, DBFormat.string(account.currentBalance),
+                                 account.currencyCode, account.visibility.rawValue,
+                                 DBFormat.string(account.createdAt)])
+        }
+        return account
+    }
+
+    /// `currentBalance` is for manual accounts; the route refuses it otherwise.
+    func update(id: UUID, name: String?, visibility: Visibility?, isHidden: Bool?,
+                currentBalance: Money? = nil) async throws {
+        try await db.write { db in
+            if let currentBalance {
+                try db.execute(sql: "UPDATE accounts SET current_balance = ? WHERE id = ?",
+                               arguments: [DBFormat.string(currentBalance), id.uuidString])
+            }
             if let name {
                 try db.execute(sql: "UPDATE accounts SET name = ? WHERE id = ?", arguments: [name, id.uuidString])
             }

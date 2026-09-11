@@ -308,6 +308,12 @@ extension AppDatabase {
                 """)
         }
 
+        // Manual accounts: no Plaid item, owner-entered balance and
+        // transactions. AccountType.cash existed with no way to create it.
+        migrator.registerMigration("v9_manual_accounts") { db in
+            try db.execute(sql: "ALTER TABLE accounts ADD COLUMN is_manual INTEGER NOT NULL DEFAULT 0")
+        }
+
         return migrator
     }
 }

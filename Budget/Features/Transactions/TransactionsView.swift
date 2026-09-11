@@ -22,6 +22,13 @@ struct TransactionsView: View {
                         Section(section.day.formatted(date: .abbreviated, time: .omitted)) {
                             ForEach(section.items) { tx in
                                 NavigationLink(value: tx) { TransactionRow(transaction: tx) }
+                                    .swipeActions(edge: .trailing) {
+                                        if isManual(tx) {
+                                            Button(role: .destructive) {
+                                                Task { await store.delete(tx) }
+                                            } label: { Label("Delete", systemImage: "trash") }
+                                        }
+                                    }
                             }
                         }
                     }
@@ -52,6 +59,11 @@ struct TransactionsView: View {
             if LaunchArgs.has("-openFirstTransaction") { autoOpen = store.transactions.first }
             #endif
         }
+    }
+
+    /// Only manual-account transactions can be deleted; Plaid rows belong to the bank.
+    private func isManual(_ tx: Transaction) -> Bool {
+        env.accountStore.accounts.first { $0.id == tx.accountID }?.isManual == true
     }
 
     private var grouped: [(day: Date, items: [Transaction])] {

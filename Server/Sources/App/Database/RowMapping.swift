@@ -44,6 +44,7 @@ extension Account {
             mask: row["mask"],
             visibility: Visibility(rawValue: row["visibility"]) ?? .shared,
             isHidden: DBFormat.bool(row["is_hidden"]),
+            isManual: DBFormat.bool(row["is_manual"]),
             plaidAccountID: row["plaid_account_id"],
             lastSyncedAt: DBFormat.date(row["last_synced_at"]),
             createdAt: DBFormat.date(row["created_at"]) ?? Date()

@@ -157,6 +157,29 @@ struct TransactionStore {
         }
     }
 
+    /// A transaction the owner entered on a manual account.
+    func insertManual(_ tx: Transaction) async throws {
+        try await db.write { db in
+            try db.execute(sql: """
+                INSERT INTO transactions (id, household_id, account_id, owner_member_id, amount, date,
+                    name, merchant_name, category_id, status, note, is_reviewed, visibility, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, arguments: [tx.id.uuidString, tx.householdID.uuidString, tx.accountID.uuidString,
+                                 tx.ownerMemberID.uuidString, DBFormat.string(tx.amount), DBFormat.string(tx.date),
+                                 tx.name, tx.merchantName, tx.categoryID?.uuidString, tx.status.rawValue,
+                                 tx.note, tx.isReviewed ? 1 : 0, tx.visibility.rawValue,
+                                 DBFormat.string(tx.createdAt)])
+        }
+    }
+
+    /// Deletes one transaction; its comments and reactions cascade. Routes
+    /// only allow this on manual accounts — Plaid rows belong to the bank.
+    func delete(id: UUID) async throws {
+        try await db.write { db in
+            try db.execute(sql: "DELETE FROM transactions WHERE id = ?", arguments: [id.uuidString])
+        }
+    }
+
     /// Re-point the pending row `oldPlaidID` at its posted replacement, keeping
     /// the row's UUID — and with it category, note, splits, comments and
     /// reactions. Returns false when no pending row exists (nothing to keep).
