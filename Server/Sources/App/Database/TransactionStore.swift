@@ -36,8 +36,12 @@ struct TransactionStore {
         if let accountID = filter.accountID { sql += " AND t.account_id = ?"; args.append(accountID.uuidString) }
         if let categoryID = filter.categoryID { sql += " AND t.category_id = ?"; args.append(categoryID.uuidString) }
         if let search = filter.search, !search.isEmpty {
-            sql += " AND (t.name LIKE ? OR t.merchant_name LIKE ?)"
-            args.append("%\(search)%"); args.append("%\(search)%")
+            // Escape LIKE's wildcards so "100%" matches the literal text.
+            let escaped = search.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "%", with: "\\%")
+                .replacingOccurrences(of: "_", with: "\\_")
+            sql += #" AND (t.name LIKE ? ESCAPE '\' OR t.merchant_name LIKE ? ESCAPE '\')"#
+            args.append("%\(escaped)%"); args.append("%\(escaped)%")
         }
         sql += " ORDER BY t.date DESC, t.created_at DESC LIMIT ? OFFSET ?"
         args.append(filter.limit + 1)   // fetch one extra to detect another page

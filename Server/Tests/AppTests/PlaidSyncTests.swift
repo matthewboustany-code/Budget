@@ -434,6 +434,31 @@ struct PlaidSyncTests {
         }
     }
 
+    @Test("Search treats % and _ literally")
+    func searchEscapesWildcards() async throws {
+        try await withApp { app in
+            let alice = try await setupAliceWithData(app)
+            let existing = try #require(try await fetchTransactions(app, token: alice.token).first)
+            try await app.appDatabase.dbPool.write { db in
+                for name in ["100% Juice", "1000 Things", "A_B Store", "AxB Store"] {
+                    let tx = BudgetModels.Transaction(
+                        id: UUID(), householdID: existing.householdID, accountID: existing.accountID,
+                        ownerMemberID: existing.ownerMemberID, amount: 1, date: Date(), name: name,
+                        plaidTransactionID: "search-\(name)", createdAt: Date())
+                    try TransactionStore.upsertPlaid(tx, db)
+                }
+            }
+            func search(_ q: String) async throws -> [String] {
+                var page: TransactionPage?
+                try await app.testing().test(.GET, "v1/transactions?search=\(q)", headers: bearer(alice.token),
+                    afterResponse: { res async throws in page = try res.content.decode(TransactionPage.self) })
+                return try #require(page).transactions.map(\.name)
+            }
+            #expect(try await search("100%25") == ["100% Juice"])
+            #expect(try await search("A_B") == ["A_B Store"])
+        }
+    }
+
     @Test("A pending charge that posts keeps its row, edits, and comments")
     func pendingToPostedKeepsEdits() async throws {
         try await withApp { app in
