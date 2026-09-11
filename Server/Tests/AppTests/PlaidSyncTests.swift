@@ -217,6 +217,37 @@ struct PlaidSyncTests {
         }
     }
 
+    @Test("The net-worth series counts only the caller's visible accounts")
+    func netWorthSeriesFollowsVisibility() async throws {
+        try await withApp { app in
+            let alice = try await setupAliceWithData(app)
+            let bob = try await addBob(app, aliceToken: alice.token)
+            var linked: [Account] = []
+            try await app.testing().test(.GET, "v1/accounts", headers: bearer(alice.token),
+                afterResponse: { res async throws in linked = try res.content.decode([Account].self) })
+            let card = try #require(linked.first { $0.type == .creditCard })
+            try await app.testing().test(.PATCH, "v1/accounts/\(card.id)", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateAccountRequest(visibility: .private)) },
+                afterResponse: { _ async in })
+            try await NetWorthSnapshotCommand.snapshotAll(app)
+
+            // Bob can't see the card, so neither his series nor his current
+            // includes its 410 liability — no step at the end of his chart.
+            try await app.testing().test(.GET, "v1/networth", headers: bearer(bob.token),
+                afterResponse: { res async throws in
+                    let nw = try res.content.decode(NetWorthResponse.self)
+                    let last = try #require(nw.series.last)
+                    #expect(last.net == nw.current.net)
+                    #expect(last.net == Decimal(string: "1200.50"))
+                })
+            try await app.testing().test(.GET, "v1/networth", headers: bearer(alice.token),
+                afterResponse: { res async throws in
+                    let nw = try res.content.decode(NetWorthResponse.self)
+                    #expect(nw.series.last?.net == Decimal(string: "790.50"))
+                })
+        }
+    }
+
     @Test("Non-owner cannot edit an account")
     func nonOwnerCannotEdit() async throws {
         try await withApp { app in

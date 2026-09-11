@@ -36,7 +36,7 @@ func registerAccountRoutes(_ routes: RoutesBuilder) {
         let (household, member) = try await req.requireMembership()
         let visible = try await req.accounts.visibleAccounts(householdID: household.id, memberID: member.id)
         let current = ReportCalculator.netWorth(accounts: visible)
-        let series = try await req.networth.series(householdID: household.id)
+        let series = try await req.networth.series(householdID: household.id, memberID: member.id)
         return NetWorthResponse(current: current, series: series)
     }
 }

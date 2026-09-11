@@ -266,6 +266,24 @@ extension AppDatabase {
                 """)
         }
 
+        // Household-wide snapshots include private accounts, so a partner's
+        // chart ended in a step down to their visible `current`. Per-account
+        // rows let each caller's series sum only what they can see (and give
+        // per-account balance history). net_worth_snapshots keeps being written
+        // for one release, then goes in a later migration.
+        migrator.registerMigration("v6_account_balance_snapshots") { db in
+            try db.execute(sql: """
+                CREATE TABLE account_balance_snapshots (
+                    id TEXT PRIMARY KEY,
+                    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                    date TEXT NOT NULL,
+                    current TEXT NOT NULL,
+                    available TEXT,
+                    UNIQUE(account_id, date)
+                );
+                """)
+        }
+
         return migrator
     }
 }
