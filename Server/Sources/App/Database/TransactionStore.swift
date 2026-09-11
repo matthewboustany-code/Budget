@@ -15,8 +15,29 @@ struct TransactionStore {
         var accountID: UUID?
         var categoryID: UUID?
         var search: String?
-        var offset: Int = 0
+        /// Opaque keyset cursor from the previous page's `nextCursor`.
+        var cursor: String?
         var limit: Int = 50
+    }
+
+    /// Keyset cursor: the sort key of the last row on a page. Unlike an
+    /// offset, it stays correct when a sync inserts rows mid-scroll — an
+    /// offset would then skip or repeat rows.
+    struct Cursor {
+        let date: String, createdAt: String, id: String
+
+        init(date: String, createdAt: String, id: String) {
+            self.date = date; self.createdAt = createdAt; self.id = id
+        }
+
+        init?(_ encoded: String) {
+            guard let data = Data(base64Encoded: encoded),
+                  let parts = String(data: data, encoding: .utf8)?.split(separator: "|", omittingEmptySubsequences: false),
+                  parts.count == 3 else { return nil }
+            date = String(parts[0]); createdAt = String(parts[1]); id = String(parts[2])
+        }
+
+        var encoded: String { Data("\(date)|\(createdAt)|\(id)".utf8).base64EncodedString() }
     }
 
     func list(householdID: UUID, memberID: UUID, filter: Filter) async throws -> TransactionPage {
@@ -43,23 +64,31 @@ struct TransactionStore {
             sql += #" AND (t.name LIKE ? ESCAPE '\' OR t.merchant_name LIKE ? ESCAPE '\')"#
             args.append("%\(escaped)%"); args.append("%\(escaped)%")
         }
-        sql += " ORDER BY t.date DESC, t.created_at DESC LIMIT ? OFFSET ?"
+        if let raw = filter.cursor {
+            guard let cursor = Cursor(raw) else { throw Abort(.badRequest, reason: "Invalid cursor") }
+            sql += " AND (t.date, t.created_at, t.id) < (?, ?, ?)"
+            args.append(cursor.date); args.append(cursor.createdAt); args.append(cursor.id)
+        }
+        // `id` breaks ties so the order — and the cursor — is total.
+        sql += " ORDER BY t.date DESC, t.created_at DESC, t.id DESC LIMIT ?"
         args.append(filter.limit + 1)   // fetch one extra to detect another page
-        args.append(filter.offset)
 
         // Map inside the read: `Row` isn't Sendable, so `[Row]` can't cross the
-        // async boundary — on Linux that fails to type-check outright.
+        // async boundary — on Linux that fails to type-check outright. The raw
+        // sort-key strings come along so the cursor matches the SQL exactly.
         let arguments = StatementArguments(args)
-        var transactions = try await db.read { db in
-            try Row.fetchAll(db, sql: sql, arguments: arguments)
-                .map(Transaction.init(row:))
+        var rows = try await db.read { db in
+            try Row.fetchAll(db, sql: sql, arguments: arguments).map { row in
+                (tx: Transaction(row: row),
+                 key: Cursor(date: row["date"], createdAt: row["created_at"], id: row["id"]))
+            }
         }
         var nextCursor: String?
-        if transactions.count > filter.limit {
-            transactions.removeLast()
-            nextCursor = String(filter.offset + filter.limit)
+        if rows.count > filter.limit {
+            rows.removeLast()
+            nextCursor = rows.last?.key.encoded
         }
-        return TransactionPage(transactions: transactions, nextCursor: nextCursor)
+        return TransactionPage(transactions: rows.map(\.tx), nextCursor: nextCursor)
     }
 
     /// Every transaction visible to the member, unpaginated — input to the

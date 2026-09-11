@@ -434,6 +434,47 @@ struct PlaidSyncTests {
         }
     }
 
+    @Test("Paging doesn't skip or repeat rows when a sync lands mid-scroll")
+    func keysetPaginationSurvivesInserts() async throws {
+        try await withApp { app in
+            let alice = try await setupAliceWithData(app)
+            let existing = try #require(try await fetchTransactions(app, token: alice.token).first)
+            func insert(_ name: String, daysAgo: Int) async throws {
+                try await app.appDatabase.dbPool.write { db in
+                    try TransactionStore.upsertPlaid(BudgetModels.Transaction(
+                        id: UUID(), householdID: existing.householdID, accountID: existing.accountID,
+                        ownerMemberID: existing.ownerMemberID, amount: 1,
+                        date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date())!,
+                        name: name, plaidTransactionID: "page-\(name)", createdAt: Date()), db)
+                }
+            }
+            for i in 0..<5 { try await insert("Old \(i)", daysAgo: 10 + i) }
+            func page(_ cursor: String?) async throws -> TransactionPage {
+                var out: TransactionPage?
+                let q = cursor.map { "&cursor=\($0.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!)" } ?? ""
+                try await app.testing().test(.GET, "v1/transactions?limit=3\(q)", headers: bearer(alice.token),
+                    afterResponse: { res async throws in
+                        #expect(res.status == .ok)
+                        out = try res.content.decode(TransactionPage.self)
+                    })
+                return try #require(out)
+            }
+            let first = try await page(nil)
+            // A newer transaction arrives between pages; with an offset the next
+            // page would start one row early and repeat the last row seen.
+            try await insert("Brand new", daysAgo: 0)
+            var seen = first.transactions.map(\.id)
+            var cursor = first.nextCursor
+            while let c = cursor {
+                let next = try await page(c)
+                seen += next.transactions.map(\.id)
+                cursor = next.nextCursor
+            }
+            #expect(seen.count == Set(seen).count)   // no repeats
+            #expect(seen.count == 7)                 // 2 fixtures + 5 old; the new one is above page 1
+        }
+    }
+
     @Test("Search treats % and _ literally")
     func searchEscapesWildcards() async throws {
         try await withApp { app in
