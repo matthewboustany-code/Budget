@@ -95,7 +95,7 @@ struct DashboardView: View {
     @ViewBuilder
     private var budgetSection: some View {
         if let rollup = env.budgetStore.currentRollup {
-            let budgeted = rollup.entries.filter { $0.budgeted + $0.rolloverIn > 0 }
+            let budgeted = rollup.budgetedEntries
             if !budgeted.isEmpty {
                 let limit = budgeted.reduce(Money(0)) { $0 + $1.budgeted + $1.rolloverIn }
                 let spent = budgeted.reduce(Money(0)) { $0 + $1.spent }

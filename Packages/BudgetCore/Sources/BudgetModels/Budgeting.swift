@@ -96,6 +96,10 @@ public struct BudgetProgress: Codable, Sendable, Hashable, Identifiable {
     /// Available = budgeted + rolled-in − spent. Negative means overspent.
     public var available: Money { budgeted + rolloverIn - spent }
     public var isOverspent: Bool { available < 0 }
+    /// Whether this category is budgeted this month. Not `limit > 0`: a
+    /// category overspent last month can roll in more than its budget, leaving
+    /// a zero or negative limit, and it is still budgeted — just already over.
+    public var hasBudget: Bool { budgeted > 0 || rolloverIn != 0 }
     /// 0...1+ fraction of the (budgeted + rolled-in) limit consumed.
     public var fractionSpent: Double {
         let limit = budgeted + rolloverIn
@@ -113,6 +117,9 @@ public struct MonthBudget: Codable, Sendable, Hashable {
         self.month = month
         self.entries = entries
     }
+
+    /// Entries that count toward the budget summary (see `hasBudget`).
+    public var budgetedEntries: [BudgetProgress] { entries.filter(\.hasBudget) }
 
     public var totalBudgeted: Money { entries.reduce(0) { $0 + $1.budgeted + $1.rolloverIn } }
     public var totalSpent: Money { entries.reduce(0) { $0 + $1.spent } }

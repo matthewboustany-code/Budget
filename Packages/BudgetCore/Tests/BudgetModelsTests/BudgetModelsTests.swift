@@ -68,3 +68,18 @@ struct ModelComputedTests {
         #expect(p.isOverspent)
     }
 }
+
+@Suite("Budget predicate")
+struct HasBudgetTests {
+    @Test("Negative rollover past the budget still counts as budgeted")
+    func negativeRolloverIsBudgeted() {
+        let m = Month(year: 2026, month: 8)
+        let overspent = BudgetProgress(categoryID: UUID(), month: m, budgeted: 100, rolloverIn: -150, spent: 20)
+        let none = BudgetProgress(categoryID: UUID(), month: m, budgeted: 0, spent: 30)
+        #expect(overspent.hasBudget)
+        #expect(overspent.isOverspent)
+        #expect(!none.hasBudget)
+        let rollup = MonthBudget(month: m, entries: [overspent, none])
+        #expect(rollup.budgetedEntries.map(\.categoryID) == [overspent.categoryID])
+    }
+}
