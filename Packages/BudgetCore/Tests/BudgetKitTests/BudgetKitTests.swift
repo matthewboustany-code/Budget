@@ -280,3 +280,84 @@ struct RecurringNextDateTests {
         #expect(series.nextDate == date(2026, 2, 28))
     }
 }
+
+/// The original rollup: `progress` per category, which rescans every
+/// transaction per rollover level. Kept here only to pin the bucketed
+/// `monthBudget` to identical output.
+private func _referenceMonthBudget(month: Month, categories: [BudgetCategory],
+                                   transactions: [Transaction], budgets: [Budget],
+                                   calendar: Calendar) -> MonthBudget {
+    let byKey = Dictionary(budgets.map { (BudgetCalculator.key($0.categoryID, $0.month), $0) },
+                           uniquingKeysWith: { a, _ in a })
+    let entries = categories.compactMap { category -> BudgetProgress? in
+        let p = BudgetCalculator.progress(categoryID: category.id, month: month, transactions: transactions,
+                                          budgetsByCategoryMonth: byKey, calendar: calendar)
+        return (p.budgeted == 0 && p.spent == 0 && p.rolloverIn == 0) ? nil : p
+    }
+    return MonthBudget(month: month, entries: entries)
+}
+
+@Suite("Bucketed budget rollup")
+struct BucketedRollupTests {
+    @Test("Matches the reference algorithm on a randomized fixture", arguments: [1, 2, 3, 42, 2026])
+    func matchesReference(seed: UInt64) {
+        var rng = SplitMix64(seed: seed)
+        let group = UUID()
+        let categories = (0..<8).map {
+            BudgetCategory(id: UUID(), householdID: household, groupID: group, name: "C\($0)")
+        }
+        let start = Month(year: 2024, month: 1)
+        var months: [Month] = [start]
+        for _ in 1..<30 { months.append(months.last!.next) }
+
+        var budgets: [Budget] = []
+        for c in categories where rng.next() % 4 != 0 {
+            // Rollover chains with gaps: some months unbudgeted, some with rollover off.
+            for m in months where rng.next() % 5 != 0 {
+                budgets.append(Budget(id: UUID(), householdID: household, categoryID: c.id, month: m,
+                                      amount: Money(Int(rng.next() % 400)),
+                                      rolloverEnabled: rng.next() % 3 != 0))
+            }
+        }
+        let account = UUID()
+        var txs: [Transaction] = []
+        for i in 0..<1500 {
+            let m = months[Int(rng.next() % UInt64(months.count))]
+            let day = Int(rng.next() % 28) + 1
+            let on = utc.date(from: DateComponents(year: m.year, month: m.month, day: day, hour: 12))!
+            let amount = Money(Int(rng.next() % 300)) - (rng.next() % 10 == 0 ? 400 : 0)  // some refunds
+            let pick = { categories[Int(rng.next() % UInt64(categories.count))].id }
+            if rng.next() % 8 == 0 {
+                let first = Money(Int(rng.next() % 100))
+                txs.append(Transaction(id: UUID(), householdID: household, accountID: account,
+                                       ownerMemberID: UUID(), amount: amount, date: on, name: "Split \(i)",
+                                       splits: [TransactionSplit(id: UUID(), categoryID: pick(), amount: first),
+                                                TransactionSplit(id: UUID(), categoryID: pick(), amount: amount - first)],
+                                       createdAt: on))
+            } else {
+                let category: UUID? = rng.next() % 12 == 0 ? nil : pick()
+                txs.append(tx(account: account, category: category, amount: amount, on: on))
+            }
+        }
+        for month in [months[0], months[12], months[29], months[29].next] {
+            let fast = BudgetCalculator.monthBudget(month: month, categories: categories,
+                                                    transactions: txs, budgets: budgets, calendar: utc)
+            let reference = _referenceMonthBudget(month: month, categories: categories,
+                                                  transactions: txs, budgets: budgets, calendar: utc)
+            #expect(fast == reference)
+        }
+    }
+}
+
+/// Deterministic PRNG so a failing seed reproduces.
+private struct SplitMix64 {
+    var state: UInt64
+    init(seed: UInt64) { state = seed }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E3779B97F4A7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+        return z ^ (z >> 31)
+    }
+}
