@@ -21,8 +21,9 @@ struct SessionToken: JWTPayload {
 
     var userID: UUID? { UUID(uuidString: sub.value) }
 
-    /// Sessions last 60 days; the app silently refreshes by re-authing when a
-    /// request 401s.
+    /// Sessions last 60 days. The app trades one for a fresh token via
+    /// `POST /v1/auth/refresh` when fewer than 7 days remain; a token that
+    /// does expire gets a 401, and the app signs out.
     static func issue(userID: UUID, lifetime: TimeInterval = 60 * 24 * 3600) -> SessionToken {
         SessionToken(userID: userID, expiresAt: Date().addingTimeInterval(lifetime))
     }

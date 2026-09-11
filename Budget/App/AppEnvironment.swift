@@ -64,6 +64,7 @@ final class AppEnvironment {
         }
         #endif
         guard session.isSignedIn else { return }
+        await authStore.refreshSessionIfNeeded()
         isBootstrapping = true
         await householdStore.refresh()
         isBootstrapping = false
@@ -82,6 +83,7 @@ final class AppEnvironment {
     /// app left open overnight shows yesterday's numbers until pulled.
     func refreshStale() async {
         guard session.isSignedIn, session.household != nil else { return }
+        await authStore.refreshSessionIfNeeded()
         await householdStore.refresh()   // also clears the offline banner
         if accountStore.isStale() { await accountStore.load() }
         if transactionStore.isStale() { await transactionStore.load() }

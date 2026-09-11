@@ -55,6 +55,12 @@ public struct AuthResponse: Codable, Sendable {
     }
 }
 
+/// `POST /v1/auth/refresh`: a fresh session token for a still-valid one.
+public struct SessionRefreshResponse: Codable, Sendable {
+    public var token: String
+    public init(token: String) { self.token = token }
+}
+
 /// The `GET /v1/me` payload: who I am and the household I'm in.
 public struct MeResponse: Codable, Sendable {
     public var user: User

@@ -67,6 +67,11 @@ final class Session {
         }
     }
 
+    /// Swaps in a refreshed bearer token; identity and household are unchanged.
+    func updateToken(_ token: String) {
+        keychain.set(token, for: tokenAccount)
+    }
+
     /// Runs on every sign-out; `AppEnvironment` uses it to clear the
     /// response cache so the next user never sees this one's data.
     var onSignOut: (() -> Void)?

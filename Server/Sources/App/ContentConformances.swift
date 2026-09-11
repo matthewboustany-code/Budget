@@ -9,6 +9,7 @@ import BudgetModels
 extension AppleSignInRequest: @retroactive Content {}
 extension RegisterDeviceRequest: @retroactive Content {}
 extension AuthResponse: @retroactive Content {}
+extension SessionRefreshResponse: @retroactive Content {}
 extension MeResponse: @retroactive Content {}
 extension CreateHouseholdRequest: @retroactive Content {}
 extension JoinHouseholdRequest: @retroactive Content {}

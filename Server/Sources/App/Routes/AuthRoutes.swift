@@ -49,4 +49,12 @@ func registerAuthRoutes(_ routes: RoutesBuilder) {
 
         return AuthResponse(token: token, user: user, household: household, member: member, members: members)
     }
+
+    // POST /v1/auth/refresh — trade a still-valid session for a fresh 60-day
+    // one. Authenticated, so it can extend a session but never start one; the
+    // app calls it when fewer than 7 days remain.
+    routes.grouped(AuthMiddleware()).post("auth", "refresh") { req async throws -> SessionRefreshResponse in
+        let user = try req.requireUser()
+        return SessionRefreshResponse(token: try await req.jwt.sign(SessionToken.issue(userID: user.id)))
+    }
 }
