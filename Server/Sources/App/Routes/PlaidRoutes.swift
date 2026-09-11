@@ -48,6 +48,26 @@ func registerPlaidRoutes(_ routes: RoutesBuilder) {
         return try await req.plaidItems.forMember(member.id).map(\.linked)
     }
 
+    // POST /v1/plaid/sync — "Sync now": pull every connection the caller owns
+    // instead of waiting for a webhook or the nightly cron. Each sync is
+    // several Plaid calls, so it's limited per user; the limiter sits inside
+    // AuthMiddleware so it keys by user rather than by IP.
+    authed.grouped(RateLimitMiddleware(rule: .init(limit: 6, window: 60 * 60), name: "plaid-sync"))
+        .post("plaid", "sync") { req async throws -> [LinkedInstitution] in
+            let (_, member) = try await req.requireMembership()
+            for item in try await req.plaidItems.forMember(member.id) {
+                do {
+                    try await req.accountSync.refreshBalances(item: item)
+                    try await req.transactionSync.sync(item: item)
+                } catch {
+                    // One broken bank mustn't stop the others; its status
+                    // (set by the sync) is what the app shows.
+                    req.logger.error("Sync now failed for item \(item.plaidItemID): \(error)")
+                }
+            }
+            return try await req.plaidItems.forMember(member.id).map(\.linked)
+        }
+
     // POST /v1/plaid/items/:id/update-link-token — a Link token in update
     // mode, to repair an item whose login expired. Owner-only.
     plaid.post("items", ":id", "update-link-token") { req async throws -> LinkTokenResponse in

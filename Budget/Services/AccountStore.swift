@@ -64,6 +64,23 @@ final class AccountStore {
         }
     }
 
+    /// Pull fresh balances and transactions from every bank the caller linked,
+    /// right now. Rate-limited server-side; returns false if refused or failed.
+    @discardableResult
+    func syncNow() async -> Bool {
+        do {
+            connections = try await api.post("v1/plaid/sync", body: Empty())
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = friendly(error)
+            return false
+        }
+    }
+
+    /// The most recent successful sync across the caller's connections.
+    var lastSyncedAt: Date? { connections.compactMap(\.lastSyncedAt).max() }
+
     /// Connections that stopped syncing, for the "Needs attention" section.
     var needsAttention: [LinkedInstitution] { connections.filter(\.status.needsAttention) }
 

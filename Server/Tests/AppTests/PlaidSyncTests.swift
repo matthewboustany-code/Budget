@@ -546,6 +546,36 @@ struct PlaidSyncTests {
         }
     }
 
+    @Test("Sync now pulls the caller's connections, and is rate-limited per user")
+    func syncNowIsRateLimited() async throws {
+        try await withApp { app in
+            let alice = try await setupAliceWithData(app)
+            for _ in 0..<6 {
+                try await app.testing().test(.POST, "v1/plaid/sync", headers: bearer(alice.token),
+                    afterResponse: { res async throws in
+                        #expect(res.status == .ok)
+                        let synced = try res.content.decode([LinkedInstitution].self)
+                        #expect(synced.count == 1)
+                        #expect(synced.first?.status == .ok)
+                        #expect(synced.first?.lastSyncedAt != nil)
+                    })
+            }
+            try await app.testing().test(.POST, "v1/plaid/sync", headers: bearer(alice.token),
+                afterResponse: { res async in
+                    #expect(res.status == .tooManyRequests)
+                    #expect(res.headers.first(name: .retryAfter) != nil)
+                })
+
+            // The limit is per user: the partner still gets through.
+            let bob = try await addBob(app, aliceToken: alice.token)
+            try await app.testing().test(.POST, "v1/plaid/sync", headers: bearer(bob.token),
+                afterResponse: { res async throws in
+                    #expect(res.status == .ok)
+                    #expect(try res.content.decode([LinkedInstitution].self).isEmpty)   // Bob owns none
+                })
+        }
+    }
+
     @Test("Paging doesn't skip or repeat rows when a sync lands mid-scroll")
     func keysetPaginationSurvivesInserts() async throws {
         try await withApp { app in

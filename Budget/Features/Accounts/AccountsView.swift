@@ -20,7 +20,7 @@ struct AccountsView: View {
                 emptyState
             } else {
                 List {
-                    Section { NetWorthCard(netWorth: store.netWorth) }
+                    Section { NetWorthCard(netWorth: store.netWorth, lastSyncedAt: store.lastSyncedAt) }
                     needsAttentionSection
                     accountSections
                 }
@@ -160,6 +160,8 @@ struct AccountsView: View {
 
 private struct NetWorthCard: View {
     let netWorth: NetWorthResponse?
+    /// Newest successful bank sync, so "is this current?" has an answer.
+    let lastSyncedAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -174,6 +176,11 @@ private struct NetWorthCard: View {
                     .foregroundStyle(.red)
             }
             .font(.footnote)
+
+            if let lastSyncedAt {
+                Text("Updated \(lastSyncedAt.formatted(.relative(presentation: .named)))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
 
             if let series = netWorth?.series, series.count >= 2 {
                 Chart(series) { point in

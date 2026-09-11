@@ -39,7 +39,12 @@ struct TransactionsView: View {
         .onChange(of: search) { _, newValue in
             if newValue.isEmpty { Task { await store.load() } }
         }
-        .refreshable { await store.load(search: search) }
+        .refreshable {
+            // Ask the banks first, so pulling means "what's new", not just
+            // "what the server already had".
+            await env.accountStore.syncNow()
+            await store.load(search: search)
+        }
         .sheet(item: $autoOpen) { tx in NavigationStack { TransactionDetailView(transaction: tx) } }
         .task {
             if store.isStale() { await store.load() }
