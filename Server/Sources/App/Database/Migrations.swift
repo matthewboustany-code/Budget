@@ -284,6 +284,17 @@ extension AppDatabase {
                 """)
         }
 
+        // memberships(user_id) is read on every authenticated request
+        // (requireMembership) and had no index — UNIQUE(household_id, user_id)
+        // leads with household_id, so it can't serve a user_id lookup. The
+        // transactions index serves the category-filtered list and its date sort.
+        migrator.registerMigration("v7_lookup_indexes") { db in
+            try db.execute(sql: """
+                CREATE INDEX idx_memberships_user ON memberships(user_id);
+                CREATE INDEX idx_tx_household_category_date ON transactions(household_id, category_id, date);
+                """)
+        }
+
         return migrator
     }
 }
