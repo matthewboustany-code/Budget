@@ -154,6 +154,51 @@ public struct ReviewSummary: Codable, Sendable, Equatable {
     }
 }
 
+/// "Always file this merchant under this category." Keyed by
+/// `RecurringDetector.normalize` of the merchant name (or the name).
+public struct CategoryRule: Codable, Sendable, Identifiable, Equatable {
+    public var id: UUID
+    public var merchantKey: String
+    public var categoryID: UUID
+    public var createdAt: Date
+    public init(id: UUID, merchantKey: String, categoryID: UUID, createdAt: Date) {
+        self.id = id
+        self.merchantKey = merchantKey
+        self.categoryID = categoryID
+        self.createdAt = createdAt
+    }
+}
+
+/// Create (or repoint) the rule for this transaction's merchant.
+public struct CreateCategoryRuleRequest: Codable, Sendable {
+    public var transactionID: UUID
+    public var categoryID: UUID
+    public init(transactionID: UUID, categoryID: UUID) {
+        self.transactionID = transactionID
+        self.categoryID = categoryID
+    }
+}
+
+/// How many other visible transactions a rule for this merchant would
+/// recategorize (never counting ones a person categorized by hand).
+public struct CategoryRulePreview: Codable, Sendable, Equatable {
+    public var merchantKey: String
+    public var matchCount: Int
+    public init(merchantKey: String, matchCount: Int) {
+        self.merchantKey = merchantKey
+        self.matchCount = matchCount
+    }
+}
+
+public struct CreateCategoryRuleResponse: Codable, Sendable {
+    public var rule: CategoryRule
+    public var updatedCount: Int
+    public init(rule: CategoryRule, updatedCount: Int) {
+        self.rule = rule
+        self.updatedCount = updatedCount
+    }
+}
+
 /// Partial update to a transaction. Only non-nil fields are applied
 /// (PATCH semantics); `clearCategory` distinguishes "leave as-is" from
 /// "set to uncategorized".

@@ -12,6 +12,10 @@ struct TransactionDetailView: View {
     @State private var note: String
     @State private var newComment = ""
     @State private var loaded = false
+    @State private var rulePrompt: RulePrompt?
+
+    /// Offered after a recategorize when other transactions share the merchant.
+    private struct RulePrompt { let categoryID: UUID; let count: Int }
 
     private let reactionChoices = ["👍", "🎉", "❤️", "😂", "💸", "✅"]
 
@@ -32,6 +36,16 @@ struct TransactionDetailView: View {
         }
         .navigationTitle(tx.merchantName ?? tx.name)
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Always file \(tx.merchantName ?? tx.name) here?",
+                            isPresented: Binding(get: { rulePrompt != nil }, set: { if !$0 { rulePrompt = nil } }),
+                            titleVisibility: .visible, presenting: rulePrompt) { prompt in
+            Button("Apply to \(prompt.count) more from this merchant") {
+                Task { await store.applyRule(transactionID: tx.id, categoryID: prompt.categoryID) }
+            }
+            Button("Just this one", role: .cancel) {}
+        } message: { prompt in
+            Text("Future transactions from this merchant will go to \(env.categoryStore.name(for: prompt.categoryID)) too. Ones you've categorized yourself won't change.")
+        }
         .task {
             guard !loaded else { return }
             if let detail = await store.detail(tx.id) {
@@ -71,6 +85,10 @@ struct TransactionDetailView: View {
                         let request: UpdateTransactionRequest = newValue.map { .init(categoryID: $0) }
                             ?? .init(clearCategory: true)
                         if let u = await store.update(tx.id, request) { tx = u }
+                        if let categoryID = newValue, let preview = await store.rulePreview(for: tx.id),
+                           preview.matchCount > 0 {
+                            rulePrompt = RulePrompt(categoryID: categoryID, count: preview.matchCount)
+                        }
                     }
                 })) {
                 Label("Uncategorized", systemImage: "xmark.circle").tag(UUID?.none)

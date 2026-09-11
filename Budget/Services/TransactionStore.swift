@@ -145,6 +145,26 @@ final class TransactionStore {
         }
     }
 
+    /// How many other transactions a rule from this one's merchant would move.
+    func rulePreview(for id: UUID) async -> CategoryRulePreview? {
+        try? await api.get("v1/category-rules/preview", query: [.init(name: "transactionId", value: id.uuidString)])
+    }
+
+    /// "Always file this merchant here": creates the rule, which also
+    /// recategorizes past matches server-side, then reloads the list.
+    @discardableResult
+    func applyRule(transactionID: UUID, categoryID: UUID) async -> Int? {
+        do {
+            let response: CreateCategoryRuleResponse = try await api.post(
+                "v1/category-rules", body: CreateCategoryRuleRequest(transactionID: transactionID, categoryID: categoryID))
+            await load()
+            return response.updatedCount
+        } catch {
+            errorMessage = friendly(error)
+            return nil
+        }
+    }
+
     func addComment(_ id: UUID, body: String) async -> TransactionComment? {
         do { return try await api.post("v1/transactions/\(id.uuidString)/comments", body: AddCommentRequest(body: body)) }
         catch { errorMessage = friendly(error); return nil }

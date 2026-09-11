@@ -37,6 +37,7 @@ struct TransactionSyncService {
                                         uniquingKeysWith: { first, _ in first })
         let categories = try await CategoryStore(db: db).list(householdID: item.householdID).categories
         let categoryIDByName = Dictionary(categories.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
+        let rules = try await CategoryRuleStore(db: db).categoryByKey(householdID: item.householdID)
 
         var cursor = item.transactionsCursor
         var hasMore = true
@@ -60,13 +61,14 @@ struct TransactionSyncService {
                 var repointed: Set<String> = []
                 for pt in response.added + response.modified {
                     guard let account = accountByPlaid[pt.accountId] else { continue }
-                    let tx = Self.map(pt, account: account, categoryIDByName: categoryIDByName)
+                    let tx = Self.map(pt, account: account, categoryIDByName: categoryIDByName, rules: rules)
                     if let pendingID = pt.pendingTransactionId,
                        try TransactionStore.repointPending(from: pendingID, to: tx, db) {
                         repointed.insert(pendingID)
                         continue
                     }
-                    try TransactionStore.upsertPlaid(tx, db)
+                    let ruled = rules[CategoryRuleStore.merchantKey(merchantName: pt.merchantName, name: pt.name)] != nil
+                    try TransactionStore.upsertPlaid(tx, categorySource: ruled ? "rule" : "plaid", db)
                 }
                 for removed in response.removed where !repointed.contains(removed.transactionId) {
                     try db.execute(sql: "DELETE FROM transactions WHERE plaid_transaction_id = ?",
@@ -86,10 +88,13 @@ struct TransactionSyncService {
         try await RecurringService(db: db).refresh(householdID: item.householdID)
     }
 
-    static func map(_ pt: PlaidTransaction, account: Account, categoryIDByName: [String: UUID]) -> Transaction {
+    /// A household rule for the merchant wins over Plaid's category.
+    static func map(_ pt: PlaidTransaction, account: Account, categoryIDByName: [String: UUID],
+                    rules: [String: UUID] = [:]) -> Transaction {
         let categoryName = CategorySeeder.plaidCategoryName(
             primary: pt.personalFinanceCategory?.primary,
             detailed: pt.personalFinanceCategory?.detailed)
+        let ruled = rules[CategoryRuleStore.merchantKey(merchantName: pt.merchantName, name: pt.name)]
         return Transaction(
             id: UUID(),
             householdID: account.householdID,
@@ -99,7 +104,7 @@ struct TransactionSyncService {
             date: plaidDate(pt.date) ?? Date(),
             name: pt.name,
             merchantName: pt.merchantName,
-            categoryID: categoryName.flatMap { categoryIDByName[$0] },
+            categoryID: ruled ?? categoryName.flatMap { categoryIDByName[$0] },
             status: pt.pending ? .pending : .posted,
             visibility: account.visibility,   // inherit the account's default
             plaidTransactionID: pt.transactionId,

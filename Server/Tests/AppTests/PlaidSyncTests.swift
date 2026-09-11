@@ -442,6 +442,112 @@ struct PlaidSyncTests {
         }
     }
 
+    private func createWallet(_ app: Application, token: String) async throws -> Account {
+        var created: Account?
+        try await app.testing().test(.POST, "v1/accounts", headers: bearer(token),
+            beforeRequest: { try $0.content.encode(CreateManualAccountRequest(name: "Wallet", type: .cash, currentBalance: 0)) },
+            afterResponse: { res async throws in created = try res.content.decode(Account.self) })
+        return try #require(created)
+    }
+
+    private func addManual(_ app: Application, token: String, account: Account, name: String,
+                           categoryID: UUID? = nil) async throws -> BudgetModels.Transaction {
+        var added: BudgetModels.Transaction?
+        try await app.testing().test(.POST, "v1/transactions", headers: bearer(token),
+            beforeRequest: { try $0.content.encode(CreateTransactionRequest(
+                accountID: account.id, amount: 10, date: Date(), name: name, categoryID: categoryID)) },
+            afterResponse: { res async throws in added = try res.content.decode(BudgetModels.Transaction.self) })
+        return try #require(added)
+    }
+
+    @Test("A category rule recategorizes merchant matches but never a person's choice")
+    func categoryRuleBulkApply() async throws {
+        try await withApp { app in
+            let alice = try await setupAliceWithData(app)
+            let categories = try await fetchCategories(app, token: alice.token)
+            let shopping = try #require(categories.first { $0.name == "Shopping" })
+            let groceries = try #require(categories.first { $0.name == "Groceries" })
+            let plaidWF = try #require(try await fetchTransactions(app, token: alice.token).first { $0.merchantName == "Whole Foods" })
+            let wallet = try await createWallet(app, token: alice.token)
+            let loose = try await addManual(app, token: alice.token, account: wallet, name: "Whole Foods #88")
+            let chosen = try await addManual(app, token: alice.token, account: wallet, name: "WHOLE FOODS 12",
+                                             categoryID: groceries.id)
+            let noKey = try await addManual(app, token: alice.token, account: wallet, name: "#123")
+
+            // Preview: the uncategorized manual row only — not itself, not the hand-picked one.
+            try await app.testing().test(.GET, "v1/category-rules/preview?transactionId=\(plaidWF.id)",
+                headers: bearer(alice.token), afterResponse: { res async throws in
+                    #expect(try res.content.decode(CategoryRulePreview.self)
+                            == CategoryRulePreview(merchantKey: "whole foods", matchCount: 1))
+                })
+            try await app.testing().test(.GET, "v1/category-rules/preview?transactionId=\(noKey.id)",
+                headers: bearer(alice.token), afterResponse: { res async in #expect(res.status == .badRequest) })
+
+            try await app.testing().test(.POST, "v1/category-rules", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(CreateCategoryRuleRequest(transactionID: plaidWF.id, categoryID: shopping.id)) },
+                afterResponse: { res async throws in
+                    #expect(try res.content.decode(CreateCategoryRuleResponse.self).updatedCount == 2)
+                })
+            var byID = Dictionary(uniqueKeysWithValues: try await fetchTransactions(app, token: alice.token).map { ($0.id, $0) })
+            #expect(byID[plaidWF.id]?.categoryID == shopping.id)
+            #expect(byID[loose.id]?.categoryID == shopping.id)
+            #expect(byID[chosen.id]?.categoryID == groceries.id)
+
+            // Once a person picks a category, repointing the rule leaves it alone.
+            try await app.testing().test(.PATCH, "v1/transactions/\(plaidWF.id)", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateTransactionRequest(categoryID: groceries.id)) },
+                afterResponse: { _ async in })
+            try await app.testing().test(.POST, "v1/category-rules", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(CreateCategoryRuleRequest(transactionID: loose.id, categoryID: shopping.id)) },
+                afterResponse: { res async throws in
+                    #expect(try res.content.decode(CreateCategoryRuleResponse.self).updatedCount == 1)
+                })
+            byID = Dictionary(uniqueKeysWithValues: try await fetchTransactions(app, token: alice.token).map { ($0.id, $0) })
+            #expect(byID[plaidWF.id]?.categoryID == groceries.id)
+
+            // One rule per merchant; delete is household-checked.
+            var rules: [CategoryRule] = []
+            try await app.testing().test(.GET, "v1/category-rules", headers: bearer(alice.token),
+                afterResponse: { res async throws in rules = try res.content.decode([CategoryRule].self) })
+            #expect(rules.count == 1)
+            let outsider = try await signIn(app, "dev:mallory", "Mallory")
+            try await app.testing().test(.POST, "v1/household", headers: bearer(outsider.token),
+                beforeRequest: { try $0.content.encode(CreateHouseholdRequest(name: "Other", memberDisplayName: "Mallory")) },
+                afterResponse: { _ async in })
+            try await app.testing().test(.DELETE, "v1/category-rules/\(rules[0].id)", headers: bearer(outsider.token),
+                afterResponse: { res async in #expect(res.status == .notFound) })
+            try await app.testing().test(.POST, "v1/category-rules", headers: bearer(outsider.token),
+                beforeRequest: { try $0.content.encode(CreateCategoryRuleRequest(transactionID: loose.id, categoryID: shopping.id)) },
+                afterResponse: { res async in #expect(res.status == .notFound) })
+            try await app.testing().test(.DELETE, "v1/category-rules/\(rules[0].id)", headers: bearer(alice.token),
+                afterResponse: { res async in #expect(res.status == .noContent) })
+        }
+    }
+
+    @Test("Sync files a merchant with a rule under the rule's category, not Plaid's")
+    func categoryRuleAppliesOnSync() async throws {
+        try await withApp { app in
+            let alice = try await signIn(app, "dev:alice", "Alice")
+            try await app.testing().test(.POST, "v1/household", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(CreateHouseholdRequest(name: "Home", memberDisplayName: "Alice")) },
+                afterResponse: { _ async in })
+            let categories = try await fetchCategories(app, token: alice.token)
+            let shopping = try #require(categories.first { $0.name == "Shopping" })
+            let groceries = try #require(categories.first { $0.name == "Groceries" })
+            let wallet = try await createWallet(app, token: alice.token)
+            let seed = try await addManual(app, token: alice.token, account: wallet, name: "NETFLIX #42")
+            try await app.testing().test(.POST, "v1/category-rules", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(CreateCategoryRuleRequest(transactionID: seed.id, categoryID: shopping.id)) },
+                afterResponse: { res async in #expect(res.status == .ok) })
+
+            try await app.testing().test(.POST, "v1/plaid/sandbox-link", headers: bearer(alice.token),
+                afterResponse: { _ async in })
+            let synced = try await fetchTransactions(app, token: alice.token)
+            #expect(synced.first { $0.merchantName == "Netflix" }?.categoryID == shopping.id)
+            #expect(synced.first { $0.merchantName == "Whole Foods" }?.categoryID == groceries.id)
+        }
+    }
+
     @Test("Split amounts must add up to the transaction total")
     func splitsMustBalance() async throws {
         try await withApp { app in

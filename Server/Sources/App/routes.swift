@@ -14,6 +14,7 @@ func routes(_ app: Application) throws {
     registerAccountRoutes(v1)
     registerCategoryRoutes(v1)
     registerTransactionRoutes(v1)
+    registerCategoryRuleRoutes(v1)
     registerBudgetRoutes(v1)
     registerRecurringRoutes(v1)
     registerGoalRoutes(v1)

@@ -314,6 +314,29 @@ extension AppDatabase {
             try db.execute(sql: "ALTER TABLE accounts ADD COLUMN is_manual INTEGER NOT NULL DEFAULT 0")
         }
 
+        // Category rules ("always file NETFLIX under Entertainment"), keyed by
+        // RecurringDetector.normalize of the merchant. `category_source` says
+        // who chose a transaction's category — plaid, rule, or user — so a
+        // rule never overrides a person's choice. Rows from before this
+        // migration can't be told apart, so Plaid rows start as `plaid`; only
+        // categorized manual rows (always a person's pick) backfill to `user`.
+        migrator.registerMigration("v10_category_rules") { db in
+            try db.execute(sql: """
+                CREATE TABLE category_rules (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+                    merchant_key TEXT NOT NULL,
+                    category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(household_id, merchant_key)
+                );
+                ALTER TABLE transactions ADD COLUMN category_source TEXT NOT NULL DEFAULT 'plaid';
+                UPDATE transactions SET category_source = 'user'
+                WHERE category_id IS NOT NULL
+                  AND account_id IN (SELECT id FROM accounts WHERE is_manual = 1);
+                """)
+        }
+
         return migrator
     }
 }

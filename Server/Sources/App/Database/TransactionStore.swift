@@ -155,10 +155,12 @@ struct TransactionStore {
 
     func update(id: UUID, _ body: UpdateTransactionRequest) async throws {
         try await db.write { db in
+            // A person's choice is marked `user` so no rule ever overrides it.
             if body.clearCategory == true {
-                try db.execute(sql: "UPDATE transactions SET category_id = NULL WHERE id = ?", arguments: [id.uuidString])
+                try db.execute(sql: "UPDATE transactions SET category_id = NULL, category_source = 'user' WHERE id = ?",
+                               arguments: [id.uuidString])
             } else if let categoryID = body.categoryID {
-                try db.execute(sql: "UPDATE transactions SET category_id = ? WHERE id = ?",
+                try db.execute(sql: "UPDATE transactions SET category_id = ?, category_source = 'user' WHERE id = ?",
                                arguments: [categoryID.uuidString, id.uuidString])
             }
             if let note = body.note {
@@ -186,13 +188,17 @@ struct TransactionStore {
         try await db.write { db in
             try db.execute(sql: """
                 INSERT INTO transactions (id, household_id, account_id, owner_member_id, amount, date,
-                    name, merchant_name, category_id, status, note, is_reviewed, visibility, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    name, merchant_name, category_id, status, note, is_reviewed, visibility, created_at,
+                    category_source)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, arguments: [tx.id.uuidString, tx.householdID.uuidString, tx.accountID.uuidString,
                                  tx.ownerMemberID.uuidString, DBFormat.string(tx.amount), DBFormat.string(tx.date),
                                  tx.name, tx.merchantName, tx.categoryID?.uuidString, tx.status.rawValue,
                                  tx.note, tx.isReviewed ? 1 : 0, tx.visibility.rawValue,
-                                 DBFormat.string(tx.createdAt)])
+                                 DBFormat.string(tx.createdAt),
+                                 // A category picked at entry is a person's choice;
+                                 // none picked leaves the row open to rules.
+                                 tx.categoryID == nil ? "plaid" : "user"])
         }
     }
 
@@ -221,7 +227,9 @@ struct TransactionStore {
 
     /// Insert a Plaid transaction, or update only Plaid-owned fields if it exists
     /// (so user edits — category, note, reviewed, visibility — are preserved).
-    static func upsertPlaid(_ tx: Transaction, _ db: Database) throws {
+    /// `categorySource` is `rule` when a category rule chose the category,
+    /// else `plaid`; it only matters on insert.
+    static func upsertPlaid(_ tx: Transaction, categorySource: String = "plaid", _ db: Database) throws {
         guard let plaidID = tx.plaidTransactionID else { return }
         if let existing = try Row.fetchOne(db, sql: "SELECT id FROM transactions WHERE plaid_transaction_id = ?",
                                            arguments: [plaidID]) {
@@ -235,13 +243,13 @@ struct TransactionStore {
             try db.execute(sql: """
                 INSERT INTO transactions (id, household_id, account_id, owner_member_id, amount, date,
                     name, merchant_name, category_id, status, note, is_reviewed, visibility, splits_json,
-                    plaid_transaction_id, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    plaid_transaction_id, created_at, category_source)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, arguments: [tx.id.uuidString, tx.householdID.uuidString, tx.accountID.uuidString,
                                  tx.ownerMemberID.uuidString, DBFormat.string(tx.amount), DBFormat.string(tx.date),
                                  tx.name, tx.merchantName, tx.categoryID?.uuidString, tx.status.rawValue,
                                  tx.note, tx.isReviewed ? 1 : 0, tx.visibility.rawValue, nil, plaidID,
-                                 DBFormat.string(tx.createdAt)])
+                                 DBFormat.string(tx.createdAt), categorySource])
         }
     }
 }

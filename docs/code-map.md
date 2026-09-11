@@ -68,6 +68,7 @@ computed properties).
 | `AccountStore` | Accounts incl. visibility-scoped listing; net-worth inputs. |
 | `TransactionStore` | Visibility-join listing/pagination/search, PATCH updates, `upsertPlaid` (preserves user edits). |
 | `CategoryStore` | Category tree CRUD (delete = archive) + `CategorySeeder` (default tree, Plaid category mapping) + transfer-category lookup. |
+| `CategoryRuleStore` | Merchant → category rules keyed by `RecurringDetector.normalize`; `apply` upserts a rule and recategorizes visible matches whose `category_source` isn't `user`. |
 | `BudgetStore` | Monthly budget upsert/list (storage only — math is BudgetKit's). |
 | `CommentReactionStore` | Honeydue comments + reactions. |
 | `RecurringStore` | Series listing (account-visibility scoped), PATCH, `mergeDetected` (detection owns numbers; user owns name/category/off-switch). |
@@ -88,7 +89,7 @@ computed properties).
 | File | Contents |
 |---|---|
 | `AccountSyncService.swift` | Link/exchange → account import; balance refresh. |
-| `TransactionSyncService.swift` | `/transactions/sync` cursor loop → upsert/categorize → triggers recurring re-detection. |
+| `TransactionSyncService.swift` | `/transactions/sync` cursor loop → upsert/categorize (household rule first, then Plaid's category) → triggers recurring re-detection. |
 | `RecurringService.swift` | Runs `RecurringDetector` over shared-visibility history, merges into storage. |
 | `SyncCommands.swift` | `sync-all` (nightly refresh, ends with a net-worth snapshot) + `networth-snapshot`. |
 | `BillReminderCommand.swift` | `bill-reminder` — logs overdue/due-soon bills per household (APNs is the planned follow-up). |
@@ -96,7 +97,7 @@ computed properties).
 ### Routes/ — one file per feature under `/v1`
 
 `Auth`, `Household`, `Plaid` (link/exchange/sandbox/webhook), `Account`
-(+ `/networth`), `Category`, `Transaction` (+ comments/reactions), `Budget`,
+(+ `/networth`), `Category`, `CategoryRule` (list/preview/create/delete), `Transaction` (+ comments/reactions, review-summary), `Budget`,
 `Recurring` (+ `/bills/upcoming`), `Goal`, `Report` (cashflow/spending),
 `Health`. Every data route resolves membership and enforces per-item
 visibility; cross-household access reads as 404.

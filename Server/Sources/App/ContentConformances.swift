@@ -39,6 +39,10 @@ extension TransactionComment: @retroactive Content {}
 extension TransactionReaction: @retroactive Content {}
 extension AddCommentRequest: @retroactive Content {}
 extension AddReactionRequest: @retroactive Content {}
+extension CategoryRule: @retroactive Content {}
+extension CreateCategoryRuleRequest: @retroactive Content {}
+extension CategoryRulePreview: @retroactive Content {}
+extension CreateCategoryRuleResponse: @retroactive Content {}
 
 // Budgets & category CRUD (P4)
 extension Budget: @retroactive Content {}
