@@ -38,7 +38,7 @@ struct DashboardView: View {
         async let reports: Void = env.reportsStore.load()
         async let bills: Void = env.billsStore.load()
         async let accounts: Void = env.accountStore.load()
-        async let budget: Void = env.budgetStore.load()
+        async let budget = env.budgetStore.loadCurrentMonth()
         _ = await (reports, bills, accounts, budget)
     }
 
@@ -94,7 +94,7 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var budgetSection: some View {
-        if let rollup = env.budgetStore.rollup {
+        if let rollup = env.budgetStore.currentRollup {
             let budgeted = rollup.entries.filter { $0.budgeted + $0.rolloverIn > 0 }
             if !budgeted.isEmpty {
                 let limit = budgeted.reduce(Money(0)) { $0 + $1.budgeted + $1.rolloverIn }

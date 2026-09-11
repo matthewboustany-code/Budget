@@ -14,6 +14,9 @@ final class BudgetStore {
     var month = Month(date: Date())
     var budgets: [Budget] = []
     var rollup: MonthBudget?
+    /// The real current month's rollup, for the dashboard — independent of
+    /// whichever month the Budget tab has stepped to.
+    var currentRollup: MonthBudget?
     var isLoading = false
     var errorMessage: String?
 
@@ -38,6 +41,18 @@ final class BudgetStore {
         } catch {
             errorMessage = friendly(error)
         }
+    }
+
+    @discardableResult
+    func loadCurrentMonth() async -> MonthBudget? {
+        do {
+            let response: BudgetMonthResponse = try await api.get(
+                "v1/budgets", query: [.init(name: "month", value: Month(date: Date()).description)])
+            currentRollup = response.rollup
+        } catch {
+            errorMessage = friendly(error)
+        }
+        return currentRollup
     }
 
     func showPreviousMonth() async {
