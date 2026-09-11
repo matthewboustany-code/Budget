@@ -106,7 +106,13 @@ func registerPlaidRoutes(_ routes: RoutesBuilder) {
         struct Webhook: Content { var webhook_type: String?; var item_id: String? }
         guard let hook = try? req.content.decode(Webhook.self), let itemID = hook.item_id else { return .ok }
         if let item = try? await PlaidItemStore(db: req.appDatabase.dbPool).find(plaidItemID: itemID) {
-            try? await req.transactionSync.sync(item: item)
+            do {
+                try await req.transactionSync.sync(item: item)
+            } catch {
+                // Still 200: a non-2xx makes Plaid retry a sync that will fail
+                // the same way. The log is how a broken Item gets noticed.
+                req.logger.error("Webhook sync failed for item \(item.plaidItemID): \(error)")
+            }
         }
         return .ok
     }
