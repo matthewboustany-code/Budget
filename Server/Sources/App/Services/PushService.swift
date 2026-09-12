@@ -2,6 +2,7 @@ import Vapor
 import APNS
 import APNSCore
 import VaporAPNS
+import BudgetModels
 
 /// APNs delivery for bill reminders.
 ///
@@ -98,3 +99,40 @@ enum PushService {
 
 /// APNs requires a Codable payload; bill reminders carry no custom data.
 struct EmptyPayload: Codable, Sendable {}
+
+extension PushService {
+    /// Tells the other household member(s) that a comment landed on a
+    /// transaction — the push half of the activity feed (v1.1 §5.1).
+    ///
+    /// Best-effort and non-throwing: a comment must be saved and returned even
+    /// when APNs is down, unconfigured, or slow. Recipients are re-checked
+    /// against transaction visibility, so a comment on a private charge is
+    /// never announced to the partner who can't see it. Threaded by
+    /// transaction id, so a back-and-forth on one charge stays one thread.
+    static func notifyComment(_ comment: TransactionComment, on transaction: Transaction,
+                              from author: HouseholdMember, req: Request) async {
+        let app = req.application
+        guard app.appConfig.apnsConfigured else { return }
+        do {
+            let members = try await req.households.members(householdID: transaction.householdID)
+            var recipients: [HouseholdMember] = []
+            for member in members where member.id != author.id {
+                if try await req.transactions.isVisible(transaction, to: member.id,
+                                                        accountStore: req.accounts) {
+                    recipients.append(member)
+                }
+            }
+            guard !recipients.isEmpty else { return }
+            let tokens = try await req.deviceTokens.tokens(userIDs: recipients.map(\.userID))
+            guard !tokens.isEmpty else { return }
+            // Awaited rather than detached: `Request` isn't Sendable, and one
+            // household's worth of tokens is a handful of calls.
+            await send(alert: "\(author.displayName) on \(transaction.name)",
+                       body: comment.body,
+                       threadID: "tx-\(transaction.id.uuidString)",
+                       to: tokens, on: app)
+        } catch {
+            app.logger.warning("Comment push failed: \(error)")
+        }
+    }
+}

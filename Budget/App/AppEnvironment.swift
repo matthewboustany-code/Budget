@@ -18,6 +18,7 @@ final class AppEnvironment {
     let billsStore: BillsStore
     let goalsStore: GoalsStore
     let reportsStore: ReportsStore
+    let activityStore: ActivityStore
     let pushRegistrar: PushRegistrar
 
     /// The selected root tab — here, not in RootTabView, so a card on one tab
@@ -45,6 +46,7 @@ final class AppEnvironment {
         self.billsStore = BillsStore(api: api)
         self.goalsStore = GoalsStore(api: api)
         self.reportsStore = ReportsStore(api: api)
+        self.activityStore = ActivityStore(api: api)
         self.pushRegistrar = PushRegistrar(api: api)
         // One place turns an expired session into a sign-out, whichever
         // request discovers it.
@@ -98,6 +100,7 @@ final class AppEnvironment {
         }
         if budgetStore.isStale() { await budgetStore.load() }
         if billsStore.isStale() { await billsStore.load() }
+        if activityStore.isStale() { await activityStore.load() }
     }
 
     enum ConnectionStatus: Equatable {

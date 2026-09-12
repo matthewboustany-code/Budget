@@ -24,3 +24,4 @@ extension ReportsStore: StaleAware {}
 extension BillsStore: StaleAware {}
 extension GoalsStore: StaleAware {}
 extension CategoryStore: StaleAware {}
+extension ActivityStore: StaleAware {}

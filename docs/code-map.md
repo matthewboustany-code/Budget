@@ -71,7 +71,7 @@ computed properties).
 | `CategoryRuleStore` | Merchant → category rules keyed by `RecurringDetector.normalize`; `apply` upserts a rule and recategorizes visible matches whose `category_source` isn't `user`. |
 | `MerchantKeyMigration` | v11 re-keying of `recurring_series` / `category_rules` after `RecurringDetector.normalize` changed; recovers rule merchants via `legacyNormalize`. |
 | `BudgetStore` | Monthly budget upsert/list (storage only — math is BudgetKit's). |
-| `CommentReactionStore` | Honeydue comments + reactions. |
+| `CommentReactionStore` | Honeydue comments + reactions, plus `feed` — the partner activity feed (one UNION over both tables, same visibility join as `TransactionStore.list`, the caller's own events excluded). |
 | `RecurringStore` | Series listing (account-visibility scoped), PATCH, `mergeDetected` (detection owns numbers; user owns name/category/off-switch). |
 | `GoalStore` | Goals CRUD + contribution ledger (running total recomputed in the same write transaction). |
 | `NetWorthStore` / `PlaidItemStore` | Daily snapshots; encrypted Plaid items + sync cursors. |
@@ -92,14 +92,16 @@ computed properties).
 | `AccountSyncService.swift` | Link/exchange → account import; balance refresh. |
 | `TransactionSyncService.swift` | `/transactions/sync` cursor loop → upsert/categorize (household rule first, then Plaid's category) → triggers recurring re-detection. |
 | `RecurringService.swift` | Runs `RecurringDetector` over shared-visibility history, merges into storage. |
+| `PushService.swift` | APNs setup (sandbox + production containers from one key) and sends; prunes dead tokens. `notifyComment` is the activity feed's push half — best-effort, visibility-checked, threaded by transaction id. |
 | `SyncCommands.swift` | `sync-all` (nightly refresh, ends with a net-worth snapshot) + `networth-snapshot`. |
-| `BillReminderCommand.swift` | `bill-reminder` — logs overdue/due-soon bills per household (APNs is the planned follow-up). |
+| `BillReminderCommand.swift` | `bill-reminder` — logs overdue/due-soon bills per household and pushes one digest per household when APNs is configured. |
 
 ### Routes/ — one file per feature under `/v1`
 
 `Auth`, `Household`, `Plaid` (link/exchange/sandbox/webhook), `Account`
 (+ `/networth`), `Category`, `CategoryRule` (list/preview/create/delete), `Transaction` (+ comments/reactions, review-summary), `Budget`,
 `Recurring` (+ `/bills/upcoming`), `Goal`, `Report` (cashflow/spending),
+`Activity` (`GET /v1/activity?since=&limit=` — the partner feed), `Device`,
 `Health`. Every data route resolves membership and enforces per-item
 visibility; cross-household access reads as 404.
 
@@ -107,7 +109,8 @@ visibility; cross-household access reads as 404.
 
 `AuthHouseholdTests`, `PlaidSyncTests` (incl. the `MockPlaidTransport`
 fixtures), `BudgetTests`, `BillsGoalsTests`, `ReportsTests`,
-`HardeningTests` (config fail-fast, webhook signature verification).
+`HardeningTests` (config fail-fast, webhook signature verification),
+`ActivityFeedTests` (partner-only filtering, private-account chatter, `since=`).
 
 ### Deployment (Server/)
 
@@ -139,12 +142,14 @@ Caddy auto-TLS), `Caddyfile`, `scripts/sync-cron.sh`, `scripts/backup-db.sh`,
 | `AccountStore` | Accounts + net worth; Plaid link-token/exchange/sandbox. |
 | `TransactionStore` / `CategoryStore` / `BudgetStore` | Feature state mirroring the corresponding endpoints. `CategoryStore` loads archived rows too (`archived`, and names for old transactions) and owns category management + merchant rules. |
 | `BillsStore` / `GoalsStore` / `ReportsStore` | P5/P6 state: series + projected bills, goals + contributions, cashflow/spending. |
+| `ActivityStore` | Partner feed + the bell's unread count. "Unread" is a per-device last-seen timestamp in `UserDefaults`, never server state. |
 | `PlaidLinkPresenter.swift` | Wraps Plaid LinkKit. |
 
 ### Features/ — one folder per screen
 
 `Onboarding` (sign-in → create/join household), `Dashboard` (Monarch-style
-home: "N to review" row, net-worth sparkline, cash flow, budget bar, due-soon bills),
+home: activity bell, "N to review" row, net-worth sparkline, cash flow, budget bar,
+due-soon bills),
 `Accounts` (incl. "Needs attention" reconnect and `ManualEntrySheets.swift` for
 manual accounts/transactions), `Transactions` (list with filter sheet — review /
 uncategorized / account / category / dates — plus detail with comments/reactions,
@@ -155,4 +160,6 @@ list, detail + contribution ledger, create/edit sheets),
 `Reports` (Swift Charts: cashflow bars, spending bars, net-worth line),
 `Settings` (members, invite, connection status, sign out; `CategoriesView.swift`
 for category create/rename/icon/archive/restore/reorder and merchant rules),
+`Activity` (`ActivityView` — the partner feed behind the dashboard bell, plus
+`TransactionLoaderView`, which fetches a transaction the feed knows only by id),
 `Shared/PlaceholderScreen` (onboarding placeholder).

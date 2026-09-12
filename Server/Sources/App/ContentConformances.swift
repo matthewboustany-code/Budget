@@ -67,3 +67,7 @@ extension GoalDetailResponse: @retroactive Content {}
 // Reports (P6)
 extension CashFlowReportResponse: @retroactive Content {}
 extension SpendingReportResponse: @retroactive Content {}
+
+// Partner activity feed (v1.1 §5.1)
+extension ActivityEvent: @retroactive Content {}
+extension ActivityFeedResponse: @retroactive Content {}

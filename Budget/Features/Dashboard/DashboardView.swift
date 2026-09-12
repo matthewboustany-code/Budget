@@ -29,6 +29,7 @@ struct DashboardView: View {
             }
         }
         .navigationTitle("Budget")
+        .toolbar { activityBell }
         .refreshable { await reload() }
         .task {
             if env.reportsStore.isStale() { await reload() }
@@ -41,7 +42,32 @@ struct DashboardView: View {
         async let accounts: Void = env.accountStore.load()
         async let budget = env.budgetStore.loadCurrentMonth()
         async let review: Void = env.transactionStore.loadReviewSummary()
-        _ = await (reports, bills, accounts, budget, review)
+        async let activity: Void = env.activityStore.load()
+        _ = await (reports, bills, accounts, budget, review, activity)
+    }
+
+    // MARK: - Activity bell
+
+    /// Badge count is local (a last-seen timestamp per device) — see
+    /// `ActivityStore`. Always shown so the feed is reachable when it's empty.
+    private var activityBell: some ToolbarContent {
+        let count = env.activityStore.unreadCount
+        return ToolbarItem(placement: .topBarTrailing) {
+            NavigationLink { ActivityView() } label: {
+                // Hand-drawn badge: `.badge` is a List/TabView modifier and
+                // does nothing on a toolbar item. The two states are separate
+                // images because a monochrome symbol takes the *first* style
+                // of a palette pair — a shared modifier turns the read bell red.
+                if count > 0 {
+                    Image(systemName: "bell.badge.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.red, .primary)
+                } else {
+                    Image(systemName: "bell")
+                }
+            }
+            .accessibilityLabel(count > 0 ? "Activity, \(count) new" : "Activity")
+        }
     }
 
     // MARK: - Review inbox

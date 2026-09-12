@@ -631,3 +631,60 @@ public struct LinkedInstitution: Codable, Identifiable, Sendable, Hashable {
 
     public var displayName: String { institutionName ?? "Connected account" }
 }
+
+// MARK: - Partner activity feed (v1.1 §5.1)
+
+/// One thing the *other* household member did on a transaction — a comment or
+/// an emoji reaction. Denormalized on purpose: the feed shows who, what, and
+/// which charge in a single row, and a per-event round trip for the member
+/// name and the transaction would make the bell unusable.
+public struct ActivityEvent: Codable, Sendable, Hashable, Identifiable {
+    public enum Kind: String, Codable, Sendable {
+        case comment
+        case reaction
+    }
+
+    public var id: UUID
+    public var kind: Kind
+    public var createdAt: Date
+    public var memberID: UUID
+    public var memberName: String
+    public var transactionID: UUID
+    public var transactionName: String
+    public var transactionAmount: Money
+    /// Comment text, for `.comment` events.
+    public var body: String?
+    /// Reaction emoji, for `.reaction` events.
+    public var emoji: String?
+
+    public init(id: UUID, kind: Kind, createdAt: Date, memberID: UUID, memberName: String,
+                transactionID: UUID, transactionName: String, transactionAmount: Money,
+                body: String? = nil, emoji: String? = nil) {
+        self.id = id
+        self.kind = kind
+        self.createdAt = createdAt
+        self.memberID = memberID
+        self.memberName = memberName
+        self.transactionID = transactionID
+        self.transactionName = transactionName
+        self.transactionAmount = transactionAmount
+        self.body = body
+        self.emoji = emoji
+    }
+
+    /// One-line summary for the feed row and the push body.
+    public var summary: String {
+        switch kind {
+        case .comment: return body ?? ""
+        case .reaction: return "Reacted \(emoji ?? "")".trimmingCharacters(in: .whitespaces)
+        }
+    }
+}
+
+public struct ActivityFeedResponse: Codable, Sendable, Hashable {
+    public var events: [ActivityEvent]
+
+    public init(events: [ActivityEvent]) {
+        self.events = events
+    }
+}

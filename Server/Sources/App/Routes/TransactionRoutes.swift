@@ -174,7 +174,9 @@ func registerTransactionRoutes(_ routes: RoutesBuilder) {
         let body = try req.content.decode(AddCommentRequest.self)
         let text = body.body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw Abort(.badRequest, reason: "Comment can't be empty.") }
-        return try await req.activity.addComment(transactionID: tx.id, memberID: member.id, body: text)
+        let comment = try await req.activity.addComment(transactionID: tx.id, memberID: member.id, body: text)
+        await PushService.notifyComment(comment, on: tx, from: member, req: req)
+        return comment
     }
 
     // POST /v1/transactions/:id/reactions — toggle an emoji reaction for the member.
