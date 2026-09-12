@@ -14,6 +14,12 @@ struct SignInView: View {
     /// belongs to this attempt and isn't a replay. Regenerated per attempt.
     @State private var currentNonce: String?
 
+    /// A fresh install points at `localhost`, which on a device is the device
+    /// itself. The server field lives in Settings, and Settings is behind
+    /// sign-in — so without an entry point here a phone can never reach a
+    /// server at all.
+    @State private var showServerEditor = false
+
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
@@ -65,8 +71,25 @@ struct SignInView: View {
             #endif
 
             if env.authStore.isWorking { ProgressView() }
+
+            Button {
+                showServerEditor = true
+            } label: {
+                // On the built-in default there is nothing useful to show —
+                // "localhost" reads as configured when it isn't.
+                Label(ServerConfig.isUsingFallback
+                        ? "Set server address"
+                        : (ServerConfig.baseURL.host() ?? "Server"),
+                      systemImage: "server.rack")
+                    .font(.footnote)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
         }
         .padding(32)
+        .sheet(isPresented: $showServerEditor) {
+            ServerURLSheet()
+        }
     }
 
     private func handle(_ result: Result<ASAuthorization, Error>) {
