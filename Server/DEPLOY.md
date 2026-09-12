@@ -75,8 +75,9 @@ Set it to `https://<BUDGET_DOMAIN>`. Changing it signs you out, because the
 session token was minted by the previous server. (Under the hood this is
 `ServerConfig`, UserDefaults key `serverBaseURL`; DEBUG builds can also be
 pointed with the `-serverBaseURL` launch argument.) The built-in default is
-`http://localhost:8080`, which only resolves in the Simulator — a real device
-must be given a reachable address here. Real Sign in with Apple requires the app built with
+`https://budget.mbandhb.com`, so this step is only needed to point an install
+at a different backend. A bare host typed here is read as `https://`; a LAN
+server over plain http needs the scheme spelled out. Real Sign in with Apple requires the app built with
 the entitlement and your Apple team; each partner signs in and joins the
 household with an invite code from Settings.
 
