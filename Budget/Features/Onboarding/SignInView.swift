@@ -75,11 +75,7 @@ struct SignInView: View {
             Button {
                 showServerEditor = true
             } label: {
-                // On the built-in default there is nothing useful to show —
-                // "localhost" reads as configured when it isn't.
-                Label(ServerConfig.isUsingFallback
-                        ? "Set server address"
-                        : (ServerConfig.baseURL.host() ?? "Server"),
+                Label(ServerConfig.baseURL.host() ?? "Server",
                       systemImage: "server.rack")
                     .font(.footnote)
             }

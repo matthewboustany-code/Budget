@@ -62,8 +62,8 @@ struct SettingsView: View {
                 Text("Backend")
             } footer: {
                 if ServerConfig.isUsingFallback {
-                    Text("localhost only works in the Simulator. On this device, "
-                         + "tap Server and enter the address your backend runs on.")
+                    Text("Using the default server. Tap Server to point this "
+                         + "install at a different backend.")
                 }
             }
 
