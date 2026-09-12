@@ -140,11 +140,12 @@ private struct BudgetCategoryRow: View {
     private var available: Money { limit - spent }
     /// A budget row exists this month, even if rollover drove the limit to ≤ 0.
     private var hasBudget: Bool { budget != nil || progress?.hasBudget == true }
+    private var color: Color { CategoryPalette.color(for: category) }
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: category.icon ?? "circle")
-                .foregroundStyle(.tint)
+                .foregroundStyle(color)
                 .frame(width: 26)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
@@ -157,7 +158,8 @@ private struct BudgetCategoryRow: View {
                 }
                 if hasBudget {
                     // limit ≤ 0 means rollover already overspent it: full red bar.
-                    BudgetBar(fraction: limit > 0 ? fraction(spent, of: limit) : 1, overspent: available < 0)
+                    BudgetBar(fraction: limit > 0 ? fraction(spent, of: limit) : 1,
+                              overspent: available < 0, tint: color)
                     Text("\(currency(spent)) of \(currency(limit))")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -186,17 +188,21 @@ private struct BudgetCategoryRow: View {
     }
 }
 
-/// Thin capsule progress bar. Green while under budget, red once over.
+/// Thin capsule progress bar, drawn in the category's color (v1.1 §5.3).
+/// Overspending always overrides it with red — the color is decoration, the
+/// red is the alarm, and a category whose own color happens to be reddish must
+/// not be able to hide that it's over.
 private struct BudgetBar: View {
     let fraction: Double
     let overspent: Bool
+    var tint: Color = .green
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(.quaternary)
                 Capsule()
-                    .fill(overspent ? Color.red : Color.green)
+                    .fill(overspent ? Color.red : tint)
                     .frame(width: geo.size.width * min(max(fraction, 0), 1))
             }
         }

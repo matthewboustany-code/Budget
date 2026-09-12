@@ -382,6 +382,8 @@ public struct CreateCategoryRequest: Codable, Sendable {
 public struct UpdateCategoryRequest: Codable, Sendable {
     public var name: String?
     public var icon: String?
+    /// Absent leaves the color untouched; an **empty string** clears it back to
+    /// automatic. One optional field can't express both otherwise.
     public var colorHex: String?
     public var sortOrder: Int?
     public var isArchived: Bool?

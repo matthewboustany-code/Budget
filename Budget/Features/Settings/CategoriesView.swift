@@ -31,7 +31,12 @@ struct CategoriesView: View {
                 Section(group.name) {
                     ForEach(store.categories.filter { $0.groupID == group.id }) { category in
                         Button { editing = .existing(category) } label: {
-                            Label(category.name, systemImage: category.icon ?? "tag")
+                            HStack(spacing: 12) {
+                                Image(systemName: category.icon ?? "tag")
+                                    .foregroundStyle(CategoryPalette.color(for: category))
+                                    .frame(width: 24)
+                                Text(category.name)
+                            }
                         }
                         .foregroundStyle(.primary)
                         .swipeActions(edge: .trailing) {
@@ -92,6 +97,10 @@ private struct CategoryEditorSheet: View {
 
     @State private var name: String
     @State private var icon: String
+    /// nil means "no color chosen" — the category keeps the deterministic
+    /// fallback rather than being pinned to whatever swatch happened to be
+    /// first in the grid.
+    @State private var colorHex: String?
 
     static let icons = [
         "tag", "cart", "house", "car", "fork.knife", "cup.and.saucer", "bag", "tshirt",
@@ -106,9 +115,11 @@ private struct CategoryEditorSheet: View {
         if case .existing(let category) = target {
             _name = State(initialValue: category.name)
             _icon = State(initialValue: category.icon ?? "tag")
+            _colorHex = State(initialValue: category.colorHex)
         } else {
             _name = State(initialValue: "")
             _icon = State(initialValue: "tag")
+            _colorHex = State(initialValue: nil)
         }
     }
 
@@ -117,12 +128,14 @@ private struct CategoryEditorSheet: View {
     var body: some View {
         Form {
             Section { TextField("Name", text: $name) }
+            colorSection
             Section("Icon") {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
                     ForEach(Self.icons, id: \.self) { symbol in
                         Button { icon = symbol } label: {
                             Image(systemName: symbol)
                                 .font(.title3)
+                                .foregroundStyle(previewColor)
                                 .frame(width: 40, height: 40)
                                 .background(icon == symbol ? Color.accentColor.opacity(0.2) : .clear,
                                             in: RoundedRectangle(cornerRadius: 8))
@@ -147,12 +160,61 @@ private struct CategoryEditorSheet: View {
 
     private var isNew: Bool { if case .new = target { true } else { false } }
 
+    /// What the icon and the chosen swatch are drawn in right now — the saved
+    /// color if there is one, otherwise the fallback this category will
+    /// actually get, so the preview never lies about the unset state.
+    private var previewColor: Color {
+        if let colorHex, let color = Color(hex: colorHex) { return color }
+        if case .existing(let category) = target { return CategoryPalette.color(for: category) }
+        return .accentColor
+    }
+
+    @ViewBuilder
+    private var colorSection: some View {
+        Section {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
+                ForEach(CategoryPalette.swatches, id: \.self) { hex in
+                    Button {
+                        // Tapping the chosen swatch again clears it, which is
+                        // the only way back to the automatic color.
+                        colorHex = (colorHex == hex) ? nil : hex
+                    } label: {
+                        Circle()
+                            .fill(Color(hex: hex) ?? .gray)
+                            .frame(width: 30, height: 30)
+                            .overlay {
+                                if colorHex == hex {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(hex)
+                    .accessibilityAddTraits(colorHex == hex ? [.isSelected] : [])
+                }
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text("Color")
+        } footer: {
+            Text(colorHex == nil
+                 ? "Automatic — a stable color picked from the category. Tap a swatch to choose your own."
+                 : "Tap the selected color again to go back to automatic.")
+        }
+    }
+
     private func save() async -> Bool {
         switch target {
         case .new(let groupID):
-            await env.categoryStore.create(groupID: groupID, name: trimmed, icon: icon)
+            await env.categoryStore.create(groupID: groupID, name: trimmed,
+                                           icon: icon, colorHex: colorHex)
         case .existing(let category):
-            await env.categoryStore.update(category.id, .init(name: trimmed, icon: icon))
+            // "" is the wire's explicit "back to automatic"; nil would read as
+            // "don't touch the color" and silently keep the old one.
+            await env.categoryStore.update(category.id,
+                                           .init(name: trimmed, icon: icon, colorHex: colorHex ?? ""))
         }
     }
 }

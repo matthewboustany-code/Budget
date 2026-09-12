@@ -68,7 +68,7 @@ computed properties).
 | `UserStore` / `HouseholdStore` | Users, households, memberships, invite codes. |
 | `AccountStore` | Accounts incl. visibility-scoped listing; net-worth inputs. |
 | `TransactionStore` | Visibility-join listing/pagination/search, PATCH updates, `upsertPlaid` (preserves user edits). |
-| `CategoryStore` | Category tree CRUD (delete = archive) + `CategorySeeder` (default tree, Plaid category mapping) + transfer-category lookup. |
+| `CategoryStore` | Category tree CRUD (delete = archive; on PATCH an **empty** `colorHex` clears the color back to automatic, since one optional field can't say both "leave it" and "clear it") + `CategorySeeder` (default tree, Plaid category mapping) + transfer-category lookup. |
 | `CategoryRuleStore` | Merchant → category rules keyed by `RecurringDetector.normalize`; `apply` upserts a rule and recategorizes visible matches whose `category_source` isn't `user`. |
 | `MerchantKeyMigration` | v11 re-keying of `recurring_series` / `category_rules` after `RecurringDetector.normalize` changed; recovers rule merchants via `legacyNormalize`. |
 | `BudgetStore` | Monthly budget upsert/list (storage only — math is BudgetKit's). |
@@ -156,15 +156,18 @@ due-soon bills),
 manual accounts/transactions), `Transactions` (list with filter sheet — review /
 uncategorized / account / category / dates — plus detail with comments/reactions,
 and `SplitEditorView.swift` for splitting one transaction across categories),
-`Budget` (month switcher, budget-vs-actual, set-budget sheet),
+`Budget` (month switcher, budget-vs-actual with per-category colored bars — overspend always overrides with red — and the set-budget sheet),
 `Bills` (Upcoming/Recurring segments, series toggles), `Goals` (progress
 list, detail + contribution ledger, create/edit sheets),
 `Reports` (Swift Charts: cashflow bars, spending bars, net-worth line),
 `Settings` (members, invite, connection status, sign out; `CategoriesView.swift`
-for category create/rename/icon/archive/restore/reorder and merchant rules),
+for category create/rename/icon/color/archive/restore/reorder and merchant rules),
 `Activity` (`ActivityView` — the partner feed behind the dashboard bell, plus
 `TransactionLoaderView`, which fetches a transaction the feed knows only by id),
-`Shared/PlaceholderScreen` (onboarding placeholder).
+`Shared/PlaceholderScreen` (onboarding placeholder) and
+`Shared/CategoryColor.swift` (the swatch palette, the `#RRGGBB` → `Color`
+bridge, and the deterministic per-id fallback that colors categories nobody
+has picked a color for).
 
 ## BudgetWidget/ — the widget extension
 

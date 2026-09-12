@@ -71,7 +71,13 @@ struct CategoryStore {
                 try db.execute(sql: "UPDATE categories SET icon = ? WHERE id = ?", arguments: [icon, id.uuidString])
             }
             if let colorHex = body.colorHex {
-                try db.execute(sql: "UPDATE categories SET color_hex = ? WHERE id = ?", arguments: [colorHex, id.uuidString])
+                // PATCH can't distinguish "leave the color alone" (absent) from
+                // "go back to automatic" (clear it) with one optional field, so
+                // an empty string is the explicit clear. Without it there'd be
+                // no way out of a color once one was picked.
+                let value: String? = colorHex.isEmpty ? nil : colorHex
+                try db.execute(sql: "UPDATE categories SET color_hex = ? WHERE id = ?",
+                               arguments: [value, id.uuidString])
             }
             if let sortOrder = body.sortOrder {
                 try db.execute(sql: "UPDATE categories SET sort_order = ? WHERE id = ?", arguments: [sortOrder, id.uuidString])

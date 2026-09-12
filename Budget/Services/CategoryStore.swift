@@ -20,7 +20,9 @@ final class CategoryStore {
     var errorMessage: String?
     /// Every category incl. archived, so old transactions still show a real
     /// name instead of "Uncategorized".
-    private var byID: [UUID: BudgetCategory] = [:]
+    /// Readable outside this file so `CategoryColor.swift` can look a
+    /// category up by id; still only written here.
+    private(set) var byID: [UUID: BudgetCategory] = [:]
     private(set) var lastLoaded: Date?
 
     init(api: APIClient) { self.api = api }
@@ -59,10 +61,11 @@ final class CategoryStore {
     // MARK: - Management
 
     @discardableResult
-    func create(groupID: UUID, name: String, icon: String?) async -> Bool {
+    func create(groupID: UUID, name: String, icon: String?, colorHex: String? = nil) async -> Bool {
         await run {
             let _: BudgetCategory = try await self.api.post(
-                "v1/categories", body: CreateCategoryRequest(groupID: groupID, name: name, icon: icon))
+                "v1/categories",
+                body: CreateCategoryRequest(groupID: groupID, name: name, icon: icon, colorHex: colorHex))
         }
     }
 

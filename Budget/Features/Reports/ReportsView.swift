@@ -25,6 +25,9 @@ struct ReportsView: View {
         .task {
             if store.isStale() { await store.load() }
             if env.accountStore.isStale() { await env.accountStore.load() }
+            // The spending chart colors its bars per category, so the category
+            // list has to be loaded even though nothing else here needs it.
+            if env.categoryStore.isStale() { await env.categoryStore.load() }
         }
     }
 
@@ -83,16 +86,25 @@ struct ReportsView: View {
             .buttonStyle(.borderless)
 
             if let spending = store.spending, !spending.entries.isEmpty {
-                Chart(spending.entries.prefix(8)) { entry in
+                let shown = Array(spending.entries.prefix(8))
+                // Each bar in its category's color (v1.1 §5.3). Styling by the
+                // category *name* rather than calling `.foregroundStyle(_:)`
+                // per mark keeps Swift Charts' own scale in charge, which is
+                // what a legend and selection would need later; the scale is
+                // built from the same rows so it can't fall out of step.
+                Chart(shown) { entry in
                     BarMark(x: .value("Amount", double(entry.amount)),
                             y: .value("Category", entry.categoryName))
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(by: .value("Category", entry.categoryName))
                         .annotation(position: .trailing, alignment: .leading) {
                             Text(currency(entry.amount))
                                 .font(.caption2.monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
                 }
+                .chartForegroundStyleScale(domain: shown.map(\.categoryName),
+                                           range: shown.map { env.categoryStore.color(for: $0.categoryID) })
+                .chartLegend(.hidden)
                 .chartXAxis(.hidden)
                 .chartYAxis {
                     AxisMarks(preset: .extended) { _ in AxisValueLabel() }

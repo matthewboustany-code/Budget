@@ -255,4 +255,34 @@ struct BudgetTests {
                 afterResponse: { res async in #expect(res.status == .badRequest) })
         }
     }
+
+    @Test("A category's color can be set, changed, left alone, and cleared")
+    func categoryColorLifecycle() async throws {
+        try await withApp { app in
+            let alice = try await setupAlice(app)
+            let groceries = try await category(app, token: alice.token, named: "Groceries")
+            #expect(groceries.colorHex == nil)   // seeded categories start automatic
+
+            func patch(_ body: UpdateCategoryRequest) async throws -> BudgetCategory {
+                var out: BudgetCategory?
+                try await app.testing().test(.PATCH, "v1/categories/\(groceries.id)", headers: bearer(alice.token),
+                    beforeRequest: { try $0.content.encode(body) },
+                    afterResponse: { res async throws in
+                        #expect(res.status == .ok)
+                        out = try res.content.decode(BudgetCategory.self)
+                    })
+                return try #require(out)
+            }
+
+            #expect(try await patch(.init(colorHex: "#22C55E")).colorHex == "#22C55E")
+            #expect(try await patch(.init(colorHex: "#3B82F6")).colorHex == "#3B82F6")
+            // Absent means "don't touch the color" — renaming must not drop it.
+            let renamed = try await patch(.init(name: "Food"))
+            #expect(renamed.name == "Food")
+            #expect(renamed.colorHex == "#3B82F6")
+            // Empty string is the explicit "back to automatic"; without it a
+            // category could never lose a color once it had one.
+            #expect(try await patch(.init(colorHex: "")).colorHex == nil)
+        }
+    }
 }
