@@ -80,6 +80,11 @@ final class APIClient {
         try await send(path, method: "PUT", body: body)
     }
 
+    /// Raw bytes for endpoints that don't answer JSON (the CSV export).
+    func getData(_ path: String, query: [URLQueryItem] = []) async throws -> Data {
+        try await perform(path, method: "GET", query: query, body: Optional<Empty>.none).0
+    }
+
     func delete(_ path: String) async throws {
         let _: Empty = try await send(path, method: "DELETE", body: Optional<Empty>.none)
     }
@@ -96,6 +101,29 @@ final class APIClient {
         _ path: String, method: String,
         query: [URLQueryItem] = [],
         body: Body?) async throws -> Response {
+
+        let (data, trimmedPath) = try await perform(path, method: method, query: query, body: body)
+
+        if Response.self == Empty.self { return Empty() as! Response }
+        if data.isEmpty { throw APIClientError.decoding("Empty response body") }
+        do {
+            let value = try decoder.decode(Response.self, from: data)
+            // Cache only after a clean decode, so a malformed body never
+            // becomes the next launch's first frame.
+            if method == "GET" { cache.store(data, for: ResponseCache.key(path: trimmedPath, query: query)) }
+            return value
+        } catch {
+            throw APIClientError.decoding(String(describing: error))
+        }
+    }
+
+    /// The transport half: URL, auth, status handling. Returns the raw bytes
+    /// and the normalized path. Used directly for non-JSON responses (the CSV
+    /// export), which must never enter the JSON response cache.
+    private func perform<Body: Encodable>(
+        _ path: String, method: String,
+        query: [URLQueryItem] = [],
+        body: Body?) async throws -> (Data, String) {
 
         // Join base URL + path predictably (paths carry their own "v1/" prefix).
         var base = baseURL.absoluteString
@@ -133,17 +161,7 @@ final class APIClient {
                                         reason: HTTPURLResponse.localizedString(forStatusCode: http.statusCode))
         }
 
-        if Response.self == Empty.self { return Empty() as! Response }
-        if data.isEmpty { throw APIClientError.decoding("Empty response body") }
-        do {
-            let value = try decoder.decode(Response.self, from: data)
-            // Cache only after a clean decode, so a malformed body never
-            // becomes the next launch's first frame.
-            if method == "GET" { cache.store(data, for: ResponseCache.key(path: trimmedPath, query: query)) }
-            return value
-        } catch {
-            throw APIClientError.decoding(String(describing: error))
-        }
+        return (data, trimmedPath)
     }
 }
 

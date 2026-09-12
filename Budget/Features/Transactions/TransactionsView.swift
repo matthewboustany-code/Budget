@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import BudgetModels
 
 /// Transactions grouped by day, with search, pagination, and navigation to the
@@ -75,6 +76,13 @@ struct TransactionsView: View {
             await store.load(search: search)
         }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareLink(item: TransactionsCSV(store: store),
+                          preview: SharePreview("Transactions.csv")) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel("Export CSV")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showFilters = true } label: {
                     Image(systemName: store.filter.isActive
@@ -168,6 +176,20 @@ struct TransactionRow: View {
 }
 
 /// Edits a copy of the filter; nothing reloads until Apply.
+/// The transactions export as a shareable file. `DataRepresentation`'s closure
+/// is async, so the download happens once a destination is chosen — tapping
+/// Share stays instant even on a long history.
+struct TransactionsCSV: Transferable {
+    let store: TransactionStore
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .commaSeparatedText) { csv in
+            try await csv.store.exportCSV()
+        }
+        .suggestedFileName("Transactions.csv")
+    }
+}
+
 struct TransactionFilterSheet: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss

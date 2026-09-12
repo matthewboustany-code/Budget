@@ -9,6 +9,17 @@ import BudgetModels
 final class TransactionStore {
     private let api: APIClient
 
+    /// CSV for the current date range. The bytes are fetched when the user
+    /// picks a share destination, not when the button is tapped, so a large
+    /// export never blocks the toolbar.
+    func exportCSV() async throws -> Data {
+        var query = [URLQueryItem]()
+        let iso = ISO8601DateFormatter()
+        if let from = filter.from { query.append(.init(name: "from", value: iso.string(from: from))) }
+        if let to = filter.to { query.append(.init(name: "to", value: iso.string(from: to))) }
+        return try await api.getData("v1/transactions/export.csv", query: query)
+    }
+
     /// What the list is narrowed to. Setting it doesn't load — the list view
     /// reloads when it differs from `loadedFilter`.
     struct Filter: Equatable {

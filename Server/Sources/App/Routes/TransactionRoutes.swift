@@ -27,6 +27,65 @@ func registerTransactionRoutes(_ routes: RoutesBuilder) {
         return try await req.transactions.list(householdID: household.id, memberID: member.id, filter: filter)
     }
 
+    // GET /v1/transactions/export.csv?from=&to= — every visible row in the
+    // range as a spreadsheet. Unpaginated by design: an export that stopped at
+    // page one would silently lose data at tax time.
+    txs.get("export.csv") { req async throws -> Response in
+        let (household, member) = try await req.requireMembership()
+        let iso = ISO8601DateFormatter()
+        let from = req.query[String.self, at: "from"].flatMap(iso.date(from:))
+        let to = req.query[String.self, at: "to"].flatMap(iso.date(from:))
+
+        let transactions = try await req.transactions.allVisible(
+            householdID: household.id, memberID: member.id, from: from, to: to)
+        let categories = try await req.categories.listIncludingArchived(householdID: household.id)
+        let accounts = try await req.accounts.visibleAccounts(householdID: household.id,
+                                                              memberID: member.id)
+        let categoryNames = Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0.name) })
+        let accountNames = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0.name) })
+
+        var day = DateFormatter()
+        day.dateFormat = "yyyy-MM-dd"
+        // Plaid days are stored at noon UTC; render them in UTC so the exported
+        // date is the calendar day the charge actually happened.
+        day.timeZone = TimeZone(identifier: "UTC")
+        day.locale = Locale(identifier: "en_US_POSIX")
+
+        var rows: [[String]] = [[
+            "Date", "Description", "Merchant", "Amount", "Category",
+            "Account", "Status", "Reviewed", "Note", "Splits"
+        ]]
+        for tx in transactions.sorted(by: { $0.date > $1.date }) {
+            let category = tx.splits.isEmpty
+                ? (tx.categoryID.flatMap { categoryNames[$0] } ?? "")
+                : "(split)"
+            let splits = tx.splits.map { split in
+                let name = split.categoryID.flatMap { categoryNames[$0] } ?? "Uncategorized"
+                return name + ": " + String(describing: split.amount)
+            }.joined(separator: " | ")
+            rows.append([
+                day.string(from: tx.date),
+                tx.name,
+                tx.merchantName ?? "",
+                String(describing: tx.amount),
+                category,
+                accountNames[tx.accountID] ?? "",
+                tx.status.rawValue,
+                tx.isReviewed ? "yes" : "no",
+                tx.note ?? "",
+                splits
+            ])
+        }
+
+        let filename = "budget-transactions-" + day.string(from: Date()) + ".csv"
+        var headers = HTTPHeaders()
+        headers.contentType = HTTPMediaType(type: "text", subType: "csv",
+                                            parameters: ["charset": "utf-8"])
+        headers.contentDisposition = .init(.attachment, filename: filename)
+        return Response(status: .ok, headers: headers,
+                        body: .init(string: CSVWriter.encode(rows)))
+    }
+
     // GET /v1/transactions/review-summary — counts for the dashboard's review row.
     txs.get("review-summary") { req async throws -> ReviewSummary in
         let (household, member) = try await req.requireMembership()
