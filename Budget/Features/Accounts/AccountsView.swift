@@ -30,6 +30,18 @@ struct AccountsView: View {
             }
         }
         .navigationTitle("Accounts")
+        // Connect-a-bank fails on the server side (a bad Plaid key, an
+        // unreachable host) far more often than in Link itself, and the store
+        // recorded those failures where nothing rendered them — so the button
+        // looked dead. The empty state has no list to hold an error row, hence
+        // an alert rather than BudgetView's inline Section.
+        .alert("Couldn't connect",
+               isPresented: Binding(get: { store.errorMessage != nil },
+                                    set: { if !$0 { store.errorMessage = nil } })) {
+            Button("OK", role: .cancel) { store.errorMessage = nil }
+        } message: {
+            Text(store.errorMessage ?? "")
+        }
         .sheet(isPresented: $showManualAccount) {
             ManualAccountSheet().presentationDetents([.medium, .large])
         }
