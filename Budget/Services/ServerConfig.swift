@@ -32,7 +32,12 @@ public enum ServerConfig {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         while text.hasSuffix("/") { text.removeLast() }
-        if !text.contains("://") { text = "http://" + text }
+        // Default to https. A bare host used to become http://, which ATS
+        // then refused for any non-local server ("requires the use of a
+        // secure connection") — and the failure names ATS, not the scheme
+        // this function chose, so it reads as an app bug rather than a typo.
+        // A LAN server over plain http still works by typing the scheme.
+        if !text.contains("://") { text = "https://" + text }
         guard let url = URL(string: text),
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
