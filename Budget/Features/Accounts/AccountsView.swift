@@ -100,11 +100,15 @@ struct AccountsView: View {
         ForEach(groups.keys.sorted { $0.sortOrder < $1.sortOrder }, id: \.self) { type in
             Section(type.groupTitle) {
                 ForEach(groups[type] ?? []) { account in
-                    AccountRow(account: account,
-                               canEdit: account.ownerMemberID == myMemberID,
-                               onToggleVisibility: { toggleVisibility(account) },
-                               onToggleHidden: { Task { await store.update(account, isHidden: !account.isHidden) } },
-                               onAddTransaction: { addingTo = account })
+                    NavigationLink {
+                        AccountDetailView(account: account)
+                    } label: {
+                        AccountRow(account: account,
+                                   canEdit: account.ownerMemberID == myMemberID,
+                                   onToggleVisibility: { toggleVisibility(account) },
+                                   onToggleHidden: { Task { await store.update(account, isHidden: !account.isHidden) } },
+                                   onAddTransaction: { addingTo = account })
+                    }
                 }
             }
         }
@@ -112,10 +116,14 @@ struct AccountsView: View {
         if !hidden.isEmpty {
             Section("Hidden") {
                 ForEach(hidden) { account in
-                    AccountRow(account: account,
-                               canEdit: account.ownerMemberID == myMemberID,
-                               onToggleVisibility: { toggleVisibility(account) },
-                               onToggleHidden: { Task { await store.update(account, isHidden: false) } })
+                    NavigationLink {
+                        AccountDetailView(account: account)
+                    } label: {
+                        AccountRow(account: account,
+                                   canEdit: account.ownerMemberID == myMemberID,
+                                   onToggleVisibility: { toggleVisibility(account) },
+                                   onToggleHidden: { Task { await store.update(account, isHidden: false) } })
+                    }
                 }
             }
         }

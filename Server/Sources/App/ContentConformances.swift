@@ -60,6 +60,8 @@ extension CreateGoalRequest: @retroactive Content {}
 extension UpdateGoalRequest: @retroactive Content {}
 extension AddContributionRequest: @retroactive Content {}
 extension UpdateContributionRequest: @retroactive Content {}
+extension AccountBalancePoint: @retroactive Content {}
+extension AccountBalanceHistoryResponse: @retroactive Content {}
 extension GoalDetailResponse: @retroactive Content {}
 
 // Reports (P6)

@@ -480,6 +480,29 @@ public struct AddContributionRequest: Codable, Sendable {
     }
 }
 
+/// One day's closing balance for a single account, from the nightly snapshot.
+public struct AccountBalancePoint: Codable, Sendable, Hashable, Identifiable {
+    public var date: Date
+    public var current: Money
+    public var available: Money?
+    public var id: Date { date }
+    public init(date: Date, current: Money, available: Money? = nil) {
+        self.date = date
+        self.current = current
+        self.available = available
+    }
+}
+
+/// `GET /v1/accounts/:id/balances` — the account plus its balance history.
+public struct AccountBalanceHistoryResponse: Codable, Sendable {
+    public var account: Account
+    public var points: [AccountBalancePoint]
+    public init(account: Account, points: [AccountBalancePoint]) {
+        self.account = account
+        self.points = points
+    }
+}
+
 /// Partial update to one contribution in a goal's ledger. Only non-nil fields
 /// are applied; `clearNote` distinguishes "leave the note" from "remove it".
 public struct UpdateContributionRequest: Codable, Sendable {

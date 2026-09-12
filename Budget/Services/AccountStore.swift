@@ -40,6 +40,25 @@ final class AccountStore {
     /// Linked institutions the signed-in member owns, for the disconnect UI.
     var connections: [LinkedInstitution] = []
 
+    /// Balance history plus the most recent transactions for one account —
+    /// the detail screen's two panes. Not cached: it's per-account and the
+    /// screen is transient.
+    func history(for accountID: UUID, days: Int = 90)
+        async -> (history: AccountBalanceHistoryResponse, recent: [Transaction])? {
+        do {
+            let path = "v1/accounts/\(accountID.uuidString)/balances"
+            async let history: AccountBalanceHistoryResponse = api.get(
+                path, query: [.init(name: "days", value: String(days))])
+            async let page: TransactionPage = api.get(
+                "v1/transactions", query: [.init(name: "accountId", value: accountID.uuidString),
+                                           .init(name: "limit", value: "10")])
+            return try await (history, page.transactions)
+        } catch {
+            errorMessage = friendly(error)
+            return nil
+        }
+    }
+
     func loadConnections() async {
         do {
             connections = try await api.get("v1/plaid/items")

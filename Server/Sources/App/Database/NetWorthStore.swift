@@ -46,6 +46,26 @@ struct NetWorthStore {
         }
     }
 
+    /// One account's balance history, oldest first. The caller has already
+    /// established that the account is visible to the member.
+    func accountSeries(accountID: UUID, from: Date? = nil) async throws -> [AccountBalancePoint] {
+        var sql = "SELECT date, current, available FROM account_balance_snapshots WHERE account_id = ?"
+        var args: [(any DatabaseValueConvertible)?] = [accountID.uuidString]
+        if let from {
+            sql += " AND date >= ?"
+            args.append(DBFormat.string(from))
+        }
+        sql += " ORDER BY date"
+        let arguments = StatementArguments(args)
+        return try await db.read { db in
+            try Row.fetchAll(db, sql: sql, arguments: arguments).map { row in
+                AccountBalancePoint(date: DBFormat.date(row["date"]) ?? Date(),
+                                    current: DBFormat.money(row["current"]),
+                                    available: (row["available"] as String?).map(DBFormat.money))
+            }
+        }
+    }
+
     /// Upsert one row per account for the day (UNIQUE(account_id, date)).
     func snapshotAccounts(_ accounts: [Account], date: Date) async throws {
         try await db.write { db in

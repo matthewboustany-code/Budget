@@ -46,6 +46,23 @@ func registerAccountRoutes(_ routes: RoutesBuilder) {
         return try await req.accounts.get(id: id) ?? account
     }
 
+    // GET /v1/accounts/:id/balances?days=90 — one account's balance history.
+    // A private account belonging to the partner is indistinguishable from a
+    // missing one (404, never 403), like every other by-id route.
+    authed.get("accounts", ":id", "balances") { req async throws -> AccountBalanceHistoryResponse in
+        let (household, member) = try await req.requireMembership()
+        guard let id = req.parameters.get("id").flatMap({ UUID(uuidString: $0) }),
+              let account = try await req.accounts.get(id: id),
+              account.householdID == household.id,
+              account.visibility == .shared || account.ownerMemberID == member.id else {
+            throw Abort(.notFound, reason: "Account not found")
+        }
+        let days = min(max(req.query[Int.self, at: "days"] ?? 90, 1), 1825)
+        let from = Calendar.current.date(byAdding: .day, value: -days, to: Date())
+        let points = try await req.networth.accountSeries(accountID: account.id, from: from)
+        return AccountBalanceHistoryResponse(account: account, points: points)
+    }
+
     // GET /v1/networth — current point (from visible accounts) + snapshot series.
     authed.get("networth") { req async throws -> NetWorthResponse in
         let (household, member) = try await req.requireMembership()
