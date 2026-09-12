@@ -10,6 +10,8 @@
 		BC0DE70000000000000000A4 /* BudgetModels in Frameworks */ = {isa = PBXBuildFile; productRef = BC0DE70000000000000000A2 /* BudgetModels */; };
 		BC0DE70000000000000000A5 /* BudgetKit in Frameworks */ = {isa = PBXBuildFile; productRef = BC0DE70000000000000000A3 /* BudgetKit */; };
 		BC0DE70000000000000000B4 /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = BC0DE70000000000000000B2 /* LinkKit */; };
+		WD000000000000000000000F /* BudgetModels in Frameworks */ = {isa = PBXBuildFile; productRef = WD000000000000000000000E /* BudgetModels */; };
+		WD0000000000000000000002 /* BudgetWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = WD0000000000000000000001 /* BudgetWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -27,12 +29,20 @@
 			remoteGlobalIDString = 42A41F82300FB5A700A17450;
 			remoteInfo = Budget;
 		};
+		WD0000000000000000000009 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 42A41F7B300FB5A700A17450 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = WD0000000000000000000004;
+			remoteInfo = BudgetWidget;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		42A41F83300FB5A700A17450 /* Budget.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Budget.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		42A41F90300FB5A900A17450 /* BudgetTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BudgetTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		42A41F9A300FB5A900A17450 /* BudgetUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BudgetUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		WD0000000000000000000001 /* BudgetWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BudgetWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -49,6 +59,11 @@
 		42A41F9D300FB5A900A17450 /* BudgetUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = BudgetUITests;
+			sourceTree = "<group>";
+		};
+		WD0000000000000000000003 /* BudgetWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = BudgetWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -78,6 +93,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		WD0000000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				WD000000000000000000000F /* BudgetModels in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -87,6 +110,7 @@
 				42A41F85300FB5A700A17450 /* Budget */,
 				42A41F93300FB5A900A17450 /* BudgetTests */,
 				42A41F9D300FB5A900A17450 /* BudgetUITests */,
+				WD0000000000000000000003 /* BudgetWidget */,
 				42A41F84300FB5A700A17450 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -97,6 +121,7 @@
 				42A41F83300FB5A700A17450 /* Budget.app */,
 				42A41F90300FB5A900A17450 /* BudgetTests.xctest */,
 				42A41F9A300FB5A900A17450 /* BudgetUITests.xctest */,
+				WD0000000000000000000001 /* BudgetWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -111,10 +136,12 @@
 				42A41F7F300FB5A700A17450 /* Sources */,
 				42A41F80300FB5A700A17450 /* Frameworks */,
 				42A41F81300FB5A700A17450 /* Resources */,
+				WD0000000000000000000008 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				WD000000000000000000000A /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				42A41F85300FB5A700A17450 /* Budget */,
@@ -175,6 +202,29 @@
 			productReference = 42A41F9A300FB5A900A17450 /* BudgetUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		WD0000000000000000000004 /* BudgetWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = WD000000000000000000000B /* Build configuration list for PBXNativeTarget "BudgetWidget" */;
+			buildPhases = (
+				WD0000000000000000000005 /* Sources */,
+				WD0000000000000000000006 /* Frameworks */,
+				WD0000000000000000000007 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				WD0000000000000000000003 /* BudgetWidget */,
+			);
+			name = BudgetWidget;
+			packageProductDependencies = (
+				WD000000000000000000000E /* BudgetModels */,
+			);
+			productName = BudgetWidget;
+			productReference = WD0000000000000000000001 /* BudgetWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -195,6 +245,9 @@
 					42A41F99300FB5A900A17450 = {
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = 42A41F82300FB5A700A17450;
+					};
+					WD0000000000000000000004 = {
+						CreatedOnToolsVersion = 26.6;
 					};
 				};
 			};
@@ -219,6 +272,7 @@
 				42A41F82300FB5A700A17450 /* Budget */,
 				42A41F8F300FB5A900A17450 /* BudgetTests */,
 				42A41F99300FB5A900A17450 /* BudgetUITests */,
+				WD0000000000000000000004 /* BudgetWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -245,7 +299,28 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		WD0000000000000000000007 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		WD0000000000000000000008 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				WD0000000000000000000002 /* BudgetWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		42A41F7F300FB5A700A17450 /* Sources */ = {
@@ -269,9 +344,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		WD0000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		WD000000000000000000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = WD0000000000000000000004 /* BudgetWidget */;
+			targetProxy = WD0000000000000000000009 /* PBXContainerItemProxy */;
+		};
 		42A41F92300FB5A900A17450 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 42A41F82300FB5A700A17450 /* Budget */;
@@ -595,6 +682,72 @@
 			};
 			name = Release;
 		};
+		WD000000000000000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BudgetWidget/BudgetWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 38S88ZF435;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/BudgetWidget-Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Budget;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mbandhb.budget.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		WD000000000000000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BudgetWidget/BudgetWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 38S88ZF435;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/BudgetWidget-Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Budget;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mbandhb.budget.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -634,6 +787,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		WD000000000000000000000B /* Build configuration list for PBXNativeTarget "BudgetWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				WD000000000000000000000C /* Debug */,
+				WD000000000000000000000D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -667,6 +829,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = BC0DE70000000000000000B1 /* XCRemoteSwiftPackageReference "plaid-link-ios" */;
 			productName = LinkKit;
+		};
+		WD000000000000000000000E /* BudgetModels */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BudgetModels;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -44,6 +44,7 @@ struct DashboardView: View {
         async let review: Void = env.transactionStore.loadReviewSummary()
         async let activity: Void = env.activityStore.load()
         _ = await (reports, bills, accounts, budget, review, activity)
+        env.publishWidgetSnapshot()
     }
 
     // MARK: - Activity bell

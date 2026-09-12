@@ -19,6 +19,7 @@ here so the app and server can never disagree.
 | `Budgeting.swift` | `CategoryGroup`, `BudgetCategory`, monthly `Budget` (+ rollover flag), `BudgetProgress`, `MonthBudget`. |
 | `BillsGoals.swift` | `RecurringSeries`, `Bill` (a projected occurrence), `Goal`, `GoalContribution`. |
 | `Reporting.swift` | `NetWorthPoint`, `CashFlowSummary`, `SpendingByCategory`. |
+| `WidgetData.swift` | `WidgetSnapshot` (what the app hands its widgets through the App Group) + `WidgetSharing` names and coders. Pure Foundation: the file IO lives on each side because `containerURL(forSecurity…)` is Darwin-only. |
 | `APIDTOs.swift` | Every request/response envelope, phase by phase — auth, household, Plaid, transactions, budgets, recurring/bills, goals, reports, `APIErrorResponse`. |
 
 ### Sources/BudgetKit — pure calculation engine
@@ -144,6 +145,7 @@ Caddy auto-TLS), `Caddyfile`, `scripts/sync-cron.sh`, `scripts/backup-db.sh`,
 | `BillsStore` / `GoalsStore` / `ReportsStore` | P5/P6 state: series + projected bills, goals + contributions, cashflow/spending. |
 | `ActivityStore` | Partner feed + the bell's unread count. "Unread" is a per-device last-seen timestamp in `UserDefaults`, never server state. |
 | `PlaidLinkPresenter.swift` | Wraps Plaid LinkKit. |
+| `WidgetSnapshotWriter.swift` | Publishes `WidgetSnapshot` into the App Group after a dashboard refresh and reloads WidgetKit timelines — but only when the content changed, since reloads are budgeted. Cleared on sign-out. |
 
 ### Features/ — one folder per screen
 
@@ -163,3 +165,13 @@ for category create/rename/icon/archive/restore/reorder and merchant rules),
 `Activity` (`ActivityView` — the partner feed behind the dashboard bell, plus
 `TransactionLoaderView`, which fetches a transaction the feed knows only by id),
 `Shared/PlaceholderScreen` (onboarding placeholder).
+
+## BudgetWidget/ — the widget extension
+
+A second target (`com.mbandhb.budget.widget`, Info.plist at
+`Config/BudgetWidget-Info.plist` so the synchronized source group can't copy it
+in as a resource). `BudgetWidget.swift` holds both widgets — "Budget left"
+(small / rectangular / circular) and "Next bill" (small / rectangular) — over
+one `SnapshotProvider` that reads the App Group file. The extension links
+`BudgetModels` only: it makes no network call and holds no session token, so
+the app is the single place that talks to the server.

@@ -51,8 +51,13 @@ final class AppEnvironment {
         // One place turns an expired session into a sign-out, whichever
         // request discovers it.
         api.onUnauthorized = { [weak session] in session?.signOut() }
-        // Changing the server URL signs out too, so this covers both.
-        session.onSignOut = { [weak api] in api?.cache.clear() }
+        // Changing the server URL signs out too, so this covers both. The
+        // widgets are cleared alongside the cache — a signed-out app must not
+        // leave the household's balances on someone's Lock Screen.
+        session.onSignOut = { [weak api] in
+            api?.cache.clear()
+            WidgetSnapshotWriter.clear()
+        }
     }
 
     /// The server was unreachable at the last `/me`; the UI is running on the
@@ -82,6 +87,11 @@ final class AppEnvironment {
             // prompting on the sign-in screen asks for a permission that has
             // nothing to explain it yet.
             await pushRegistrar.requestAuthorizationAndRegister()
+            // Budget and bills aren't loaded at launch (the dashboard's own
+            // `.task` does that), so this publishes whatever the response
+            // cache prefilled — enough to keep a widget warm across a cold
+            // start, and the dashboard overwrites it moments later.
+            publishWidgetSnapshot()
         }
     }
 
@@ -101,6 +111,14 @@ final class AppEnvironment {
         if budgetStore.isStale() { await budgetStore.load() }
         if billsStore.isStale() { await billsStore.load() }
         if activityStore.isStale() { await activityStore.load() }
+        publishWidgetSnapshot()
+    }
+
+    /// Hands the widgets the numbers the app just loaded. Called after a
+    /// refresh rather than on a schedule — the extension has no session token
+    /// and never fetches, so this is the only way its data moves.
+    func publishWidgetSnapshot() {
+        WidgetSnapshotWriter.publish(budget: budgetStore, bills: billsStore)
     }
 
     enum ConnectionStatus: Equatable {
