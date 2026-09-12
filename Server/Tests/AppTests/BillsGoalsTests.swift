@@ -341,6 +341,87 @@ struct BillsGoalsTests {
 
     // MARK: - Goals
 
+    @Test("Editing and deleting a contribution recomputes the goal total")
+    func contributionEditAndDelete() async throws {
+        try await withApp { app in
+            let alice = try await setupAlice(app)
+            var goal: Goal?
+            try await app.testing().test(.POST, "v1/goals", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(CreateGoalRequest(name: "Roof", targetAmount: 5000)) },
+                afterResponse: { res async throws in goal = try res.content.decode(Goal.self) })
+            let roof = try #require(goal)
+
+            // Two entries, the first mistyped as 5000 instead of 500.
+            var detail: GoalDetailResponse?
+            try await app.testing().test(.POST, "v1/goals/\(roof.id)/contributions", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(AddContributionRequest(amount: 5000, note: "oops")) },
+                afterResponse: { res async throws in detail = try res.content.decode(GoalDetailResponse.self) })
+            try await app.testing().test(.POST, "v1/goals/\(roof.id)/contributions", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(AddContributionRequest(amount: 250)) },
+                afterResponse: { res async throws in detail = try res.content.decode(GoalDetailResponse.self) })
+            let funded = try #require(detail)
+            let typo = try #require(funded.contributions.first { $0.amount == 5000 })
+            #expect(funded.goal.currentAmount == 5250)
+
+            // Fix the amount → the total follows, in the same transaction.
+            try await app.testing().test(.PATCH, "v1/goals/\(roof.id)/contributions/\(typo.id)",
+                headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateContributionRequest(amount: 500, clearNote: true)) },
+                afterResponse: { res async throws in
+                    let d = try res.content.decode(GoalDetailResponse.self)
+                    #expect(d.goal.currentAmount == 750)
+                    #expect(d.contributions.first { $0.id == typo.id }?.note == nil)
+                })
+
+            // Delete the other one → total drops again, ledger shrinks.
+            let other = try #require(funded.contributions.first { $0.amount == 250 })
+            try await app.testing().test(.DELETE, "v1/goals/\(roof.id)/contributions/\(other.id)",
+                headers: bearer(alice.token),
+                afterResponse: { res async throws in
+                    let d = try res.content.decode(GoalDetailResponse.self)
+                    #expect(d.goal.currentAmount == 500)
+                    #expect(d.contributions.count == 1)
+                })
+
+            // Zero is refused, and an unknown id is 404 (not 403).
+            try await app.testing().test(.PATCH, "v1/goals/\(roof.id)/contributions/\(typo.id)",
+                headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateContributionRequest(amount: 0)) },
+                afterResponse: { res async in #expect(res.status == .badRequest) })
+            try await app.testing().test(.DELETE, "v1/goals/\(roof.id)/contributions/\(UUID())",
+                headers: bearer(alice.token),
+                afterResponse: { res async in #expect(res.status == .notFound) })
+        }
+    }
+
+    @Test("A partner's contribution can't be reached through another household's goal")
+    func contributionIsolation() async throws {
+        try await withApp { app in
+            let alice = try await setupAlice(app)
+            var goal: Goal?
+            try await app.testing().test(.POST, "v1/goals", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(CreateGoalRequest(name: "Car", targetAmount: 9000)) },
+                afterResponse: { res async throws in goal = try res.content.decode(Goal.self) })
+            let car = try #require(goal)
+            var detail: GoalDetailResponse?
+            try await app.testing().test(.POST, "v1/goals/\(car.id)/contributions", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(AddContributionRequest(amount: 300)) },
+                afterResponse: { res async throws in detail = try res.content.decode(GoalDetailResponse.self) })
+            let seeded = try #require(detail)
+            let entry = try #require(seeded.contributions.first)
+
+            // An outsider with their own household sees 404 for both the goal
+            // and the contribution — never 403, which would confirm existence.
+            let carol = try await signIn(app, "dev:carol", "Carol")
+            try await app.testing().test(.POST, "v1/household", headers: bearer(carol.token),
+                beforeRequest: { try $0.content.encode(CreateHouseholdRequest(name: "Other", memberDisplayName: "Carol")) },
+                afterResponse: { _ async in })
+            try await app.testing().test(.DELETE, "v1/goals/\(car.id)/contributions/\(entry.id)",
+                headers: bearer(carol.token),
+                afterResponse: { res async in #expect(res.status == .notFound) })
+        }
+    }
+
     @Test("Create, fund, edit, and delete a goal; totals track contributions")
     func goalLifecycle() async throws {
         try await withApp { app in

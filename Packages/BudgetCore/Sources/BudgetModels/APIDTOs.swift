@@ -480,6 +480,22 @@ public struct AddContributionRequest: Codable, Sendable {
     }
 }
 
+/// Partial update to one contribution in a goal's ledger. Only non-nil fields
+/// are applied; `clearNote` distinguishes "leave the note" from "remove it".
+public struct UpdateContributionRequest: Codable, Sendable {
+    public var amount: Money?
+    public var date: Date?
+    public var note: String?
+    public var clearNote: Bool?
+    public init(amount: Money? = nil, date: Date? = nil, note: String? = nil,
+                clearNote: Bool? = nil) {
+        self.amount = amount
+        self.date = date
+        self.note = note
+        self.clearNote = clearNote
+    }
+}
+
 /// A goal plus its contribution history, for the detail screen.
 public struct GoalDetailResponse: Codable, Sendable {
     public var goal: Goal

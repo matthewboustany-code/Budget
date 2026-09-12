@@ -75,6 +75,41 @@ func registerGoalRoutes(_ routes: RoutesBuilder) {
         let contributions = try await req.goals.contributions(goalID: goal.id)
         return GoalDetailResponse(goal: updated, contributions: contributions)
     }
+
+    // PATCH /v1/goals/:id/contributions/:cid — fix a mistyped entry.
+    goals.patch(":id", "contributions", ":cid") { req async throws -> GoalDetailResponse in
+        let goal = try await loadGoal(req)
+        let contribution = try await loadContribution(req, goal: goal)
+        let body = try req.content.decode(UpdateContributionRequest.self)
+        if let amount = body.amount, amount == 0 {
+            throw Abort(.badRequest, reason: "Contribution amount can't be zero.")
+        }
+        let updated = try await req.goals.updateContribution(id: contribution.id,
+                                                             goalID: goal.id, body)
+        let contributions = try await req.goals.contributions(goalID: goal.id)
+        return GoalDetailResponse(goal: updated, contributions: contributions)
+    }
+
+    // DELETE /v1/goals/:id/contributions/:cid
+    goals.delete(":id", "contributions", ":cid") { req async throws -> GoalDetailResponse in
+        let goal = try await loadGoal(req)
+        let contribution = try await loadContribution(req, goal: goal)
+        let updated = try await req.goals.deleteContribution(id: contribution.id,
+                                                             goalID: goal.id)
+        let contributions = try await req.goals.contributions(goalID: goal.id)
+        return GoalDetailResponse(goal: updated, contributions: contributions)
+    }
+}
+
+/// Loads `:cid` within an already-authorized goal. Scoping the lookup to the
+/// goal means a contribution id from another household reads as absent — 404,
+/// not 403, like every other by-id route.
+private func loadContribution(_ req: Request, goal: Goal) async throws -> GoalContribution {
+    guard let id = req.parameters.get("cid").flatMap({ UUID(uuidString: $0) }),
+          let contribution = try await req.goals.contribution(id: id, goalID: goal.id) else {
+        throw Abort(.notFound, reason: "Contribution not found")
+    }
+    return contribution
 }
 
 /// Loads the goal in `:id`, 404ing when it doesn't exist or belongs to another

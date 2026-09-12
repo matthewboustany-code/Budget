@@ -59,6 +59,7 @@ extension Goal: @retroactive Content {}
 extension CreateGoalRequest: @retroactive Content {}
 extension UpdateGoalRequest: @retroactive Content {}
 extension AddContributionRequest: @retroactive Content {}
+extension UpdateContributionRequest: @retroactive Content {}
 extension GoalDetailResponse: @retroactive Content {}
 
 // Reports (P6)

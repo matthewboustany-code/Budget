@@ -84,6 +84,12 @@ final class APIClient {
         let _: Empty = try await send(path, method: "DELETE", body: Optional<Empty>.none)
     }
 
+    /// DELETE for routes that answer with the updated resource rather than a
+    /// bare 200 (a goal's contribution ledger, for one).
+    func delete<Response: Decodable>(_ path: String) async throws -> Response {
+        try await send(path, method: "DELETE", body: Optional<Empty>.none)
+    }
+
     // MARK: - Core
 
     private func send<Body: Encodable, Response: Decodable>(

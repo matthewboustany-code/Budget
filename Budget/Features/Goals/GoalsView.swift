@@ -95,6 +95,7 @@ private struct GoalDetailView: View {
 
     @State private var detail: GoalDetailResponse?
     @State private var isContributing = false
+    @State private var editingContribution: GoalContribution?
     @State private var isEditing = false
     @State private var confirmDelete = false
 
@@ -127,6 +128,12 @@ private struct GoalDetailView: View {
         .sheet(isPresented: $isEditing) {
             GoalFormSheet(existing: goal)
                 .presentationDetents([.medium])
+        }
+        .sheet(item: $editingContribution) { contribution in
+            ContributeSheet(goalID: goalID, existing: contribution) { updated in
+                detail = updated
+            }
+            .presentationDetents([.medium])
         }
         .confirmationDialog("Delete this goal?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Goal", role: .destructive) {
@@ -200,7 +207,25 @@ private struct GoalDetailView: View {
                 ForEach(detail.contributions) { contribution in
                     ContributionRow(contribution: contribution,
                                     members: env.session.members)
+                        .swipeActions(edge: .trailing) {
+                            Button("Delete", role: .destructive) {
+                                deleteContribution(contribution)
+                            }
+                            Button("Edit") { editingContribution = contribution }
+                                .tint(.blue)
+                        }
                 }
+            }
+        }
+    }
+}
+
+extension GoalDetailView {
+    fileprivate func deleteContribution(_ contribution: GoalContribution) {
+        Task {
+            if let updated = await env.goalsStore.deleteContribution(
+                goalID, contributionID: contribution.id) {
+                detail = updated
             }
         }
     }
@@ -347,12 +372,23 @@ private struct ContributeSheet: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
     let goalID: UUID
+    /// nil = add a new entry; non-nil = correct an existing one in place.
+    var existing: GoalContribution?
     var onSaved: (GoalDetailResponse) -> Void
 
     @State private var amount: Money?
     @State private var isWithdrawal = false
     @State private var note = ""
     @State private var isSaving = false
+
+    /// Direction is carried by the sign, so the editor shows the magnitude and
+    /// lets the segmented control own the sign — same as the add flow.
+    private func prefill() {
+        guard let existing, amount == nil else { return }
+        amount = abs(existing.amount)
+        isWithdrawal = existing.amount < 0
+        note = existing.note ?? ""
+    }
 
     var body: some View {
         NavigationStack {
@@ -370,8 +406,9 @@ private struct ContributeSheet: View {
                     Text("This tracks progress toward the goal — it doesn't move money between accounts.")
                 }
             }
-            .navigationTitle(isWithdrawal ? "Withdraw" : "Add Money")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear { prefill() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -384,14 +421,26 @@ private struct ContributeSheet: View {
         }
     }
 
+    private var title: String {
+        if existing != nil { return "Edit Entry" }
+        return isWithdrawal ? "Withdraw" : "Add Money"
+    }
+
     private func save() {
         guard let amount, amount > 0 else { return }
         isSaving = true
         Task {
             let signed = isWithdrawal ? -amount : amount
             let trimmedNote = note.trimmingCharacters(in: .whitespaces)
-            if let updated = await env.goalsStore.contribute(
-                goalID, amount: signed, note: trimmedNote.isEmpty ? nil : trimmedNote) {
+            let note: String? = trimmedNote.isEmpty ? nil : trimmedNote
+            let updated: GoalDetailResponse?
+            if let existing {
+                updated = await env.goalsStore.editContribution(
+                    goalID, contributionID: existing.id, amount: signed, note: note)
+            } else {
+                updated = await env.goalsStore.contribute(goalID, amount: signed, note: note)
+            }
+            if let updated {
                 onSaved(updated)
                 dismiss()
             }

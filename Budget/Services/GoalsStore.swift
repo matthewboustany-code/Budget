@@ -95,6 +95,37 @@ final class GoalsStore {
         }
     }
 
+    /// Correct a mistyped entry. The server recomputes the running total in
+    /// the same transaction, so the returned detail is authoritative.
+    func editContribution(_ goalID: UUID, contributionID: UUID,
+                          amount: Money, note: String?) async -> GoalDetailResponse? {
+        do {
+            let detail: GoalDetailResponse = try await api.patch(
+                "v1/goals/\(goalID.uuidString)/contributions/\(contributionID.uuidString)",
+                body: UpdateContributionRequest(amount: amount, note: note,
+                                                clearNote: note == nil ? true : nil))
+            replace(detail.goal)
+            errorMessage = nil
+            return detail
+        } catch {
+            errorMessage = friendly(error)
+            return nil
+        }
+    }
+
+    func deleteContribution(_ goalID: UUID, contributionID: UUID) async -> GoalDetailResponse? {
+        do {
+            let detail: GoalDetailResponse = try await api.delete(
+                "v1/goals/\(goalID.uuidString)/contributions/\(contributionID.uuidString)")
+            replace(detail.goal)
+            errorMessage = nil
+            return detail
+        } catch {
+            errorMessage = friendly(error)
+            return nil
+        }
+    }
+
     private func replace(_ goal: Goal) {
         if let index = goals.firstIndex(where: { $0.id == goal.id }) {
             goals[index] = goal
