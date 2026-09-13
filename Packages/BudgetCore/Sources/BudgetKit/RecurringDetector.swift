@@ -27,7 +27,9 @@ public enum RecurringDetector {
             guard cadence != .irregular else { return nil }
 
             let amounts = sorted.map { $0.amount }
-            let avg = amounts.reduce(Money(0), +) / Money(amounts.count)
+            // Round to cents: an unrounded mean of three T-Mobile charges was
+            // stored (and shown) as 176.4833333… — a bill amount is money.
+            let avg = roundedToCents(amounts.reduce(Money(0), +) / Money(amounts.count))
             // Reject series whose amounts swing wildly (not a stable
             // subscription) or mix inflows and outflows (a charge/refund
             // pattern — Plaid's sandbox "United Airlines" +500/−500 pair
@@ -112,6 +114,13 @@ public enum RecurringDetector {
         guard mean > 0 else { return false }
         let maxDeviation = values.map { abs($0 - mean) / mean }.max() ?? 0
         return maxDeviation <= 0.25   // within 25% of the mean
+    }
+
+    static func roundedToCents(_ value: Money) -> Money {
+        var input = value
+        var result = Money()
+        NSDecimalRound(&result, &input, 2, .plain)
+        return result
     }
 
     static func median(_ values: [Int]) -> Int? {

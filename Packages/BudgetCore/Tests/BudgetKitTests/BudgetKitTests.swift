@@ -168,6 +168,18 @@ struct RecurringDetectorTests {
         #expect(series.first?.name.lowercased().contains("netflix") == true)
     }
 
+    @Test func averageAmountIsRoundedToCents() {
+        let acct = UUID()
+        // 175 + 176.45 + 178 = 529.45 → 176.48333…, the T-Mobile case.
+        let txs = zip([Money(175), Money(string: "176.45")!, Money(178)], 0...).map { amount, i in
+            tx(account: acct, category: nil, amount: amount,
+               on: date(2026, 5 + i, 10), merchant: "T-Mobile")
+        }
+        let series = RecurringDetector.detect(transactions: txs, householdID: household,
+                                              calendar: utc, now: date(2026, 7, 20))
+        #expect(series.first?.averageAmount == Money(string: "176.48"))
+    }
+
     @Test func ignoresErraticMerchants() {
         let acct = UUID()
         let txs = [

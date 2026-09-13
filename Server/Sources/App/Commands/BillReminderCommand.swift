@@ -48,17 +48,17 @@ struct BillReminderCommand: AsyncCommand {
             let bills = BillProjector.upcomingBills(series: series, from: from, to: to,
                                                     recentTransactions: payments,
                                                     now: now, calendar: calendar)
-            guard !bills.isEmpty else { continue }
-            for bill in bills {
-                let due = bill.dueDate.formatted(date: .abbreviated, time: .omitted)
-                app.logger.info("Bill reminder [\(household.name)]: \(bill.name) \(bill.amount) due \(due) (\(bill.status))")
-            }
-
-            // A bill whose charge already posted is logged but never pushed —
-            // nagging about something already paid is the fastest way to get
-            // reminders muted.
+            // A bill whose charge already posted is neither logged as a
+            // reminder nor pushed — nagging about something already paid is
+            // the fastest way to get reminders muted.
             let unpaid = bills.filter { $0.status != .paid }
-            guard pushEnabled, !unpaid.isEmpty else { continue }
+            guard !unpaid.isEmpty else { continue }
+            for bill in unpaid {
+                let due = bill.dueDate.formatted(date: .abbreviated, time: .omitted)
+                let amount = bill.amount.formatted(.number.precision(.fractionLength(2)))
+                app.logger.info("Bill reminder [\(household.name)]: \(bill.name) \(amount) due \(due) (\(bill.status))")
+            }
+            guard pushEnabled else { continue }
             let members = try await householdStore.members(householdID: household.id)
             let tokens = try await deviceStore.tokens(userIDs: members.map(\.userID))
             guard !tokens.isEmpty else { continue }
