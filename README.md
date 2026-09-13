@@ -60,8 +60,11 @@ Open `Budget.xcodeproj` in Xcode and run on an iOS 26 simulator, or:
 xcodebuild -project Budget.xcodeproj -scheme Budget \
   -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
-The app defaults to `http://localhost:8080` (the simulator shares the host
-network). Override for a run with the `-serverBaseURL <url>` launch argument.
+The app defaults to `https://budget.mbandhb.com`, the live deployment, so a
+fresh install connects with no setup. To work against a local `swift run App
+serve`, pass `-serverBaseURL http://localhost:8080` as a launch argument (the
+simulator shares the host network); on a device, use Settings -> Backend ->
+Server.
 
 > **Keychain needs a signed build.** Running from Xcode signs automatically. For
 > CLI builds, sign (even ad-hoc) so the app gets an `application-identifier` —

@@ -9,7 +9,8 @@ func registerTransactionRoutes(_ routes: RoutesBuilder) {
     let authed = routes.grouped(AuthMiddleware())
     let txs = authed.grouped("transactions")
 
-    // GET /v1/transactions?from=&to=&accountId=&categoryId=&search=&cursor=
+    // GET /v1/transactions?from=&to=&accountId=&categoryId=&uncategorized=1&unreviewed=1&search=&cursor=&limit=
+    // `cursor` is the opaque keyset token from the previous page's nextCursor.
     txs.get { req async throws -> TransactionPage in
         let (household, member) = try await req.requireMembership()
         let iso = ISO8601DateFormatter()
@@ -19,8 +20,76 @@ func registerTransactionRoutes(_ routes: RoutesBuilder) {
         filter.accountID = req.query[String.self, at: "accountId"].flatMap { UUID(uuidString: $0) }
         filter.categoryID = req.query[String.self, at: "categoryId"].flatMap { UUID(uuidString: $0) }
         filter.search = req.query[String.self, at: "search"]
-        filter.offset = req.query[String.self, at: "cursor"].flatMap { Int($0) } ?? 0
+        filter.uncategorized = req.query[String.self, at: "uncategorized"] == "1"
+        filter.unreviewed = req.query[String.self, at: "unreviewed"] == "1"
+        filter.cursor = req.query[String.self, at: "cursor"]
+        filter.limit = min(max(req.query[Int.self, at: "limit"] ?? 50, 1), 200)
         return try await req.transactions.list(householdID: household.id, memberID: member.id, filter: filter)
+    }
+
+    // GET /v1/transactions/export.csv?from=&to= — every visible row in the
+    // range as a spreadsheet. Unpaginated by design: an export that stopped at
+    // page one would silently lose data at tax time.
+    txs.get("export.csv") { req async throws -> Response in
+        let (household, member) = try await req.requireMembership()
+        let iso = ISO8601DateFormatter()
+        let from = req.query[String.self, at: "from"].flatMap(iso.date(from:))
+        let to = req.query[String.self, at: "to"].flatMap(iso.date(from:))
+
+        let transactions = try await req.transactions.allVisible(
+            householdID: household.id, memberID: member.id, from: from, to: to)
+        let categories = try await req.categories.listIncludingArchived(householdID: household.id)
+        let accounts = try await req.accounts.visibleAccounts(householdID: household.id,
+                                                              memberID: member.id)
+        let categoryNames = Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0.name) })
+        let accountNames = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0.name) })
+
+        var day = DateFormatter()
+        day.dateFormat = "yyyy-MM-dd"
+        // Plaid days are stored at noon UTC; render them in UTC so the exported
+        // date is the calendar day the charge actually happened.
+        day.timeZone = TimeZone(identifier: "UTC")
+        day.locale = Locale(identifier: "en_US_POSIX")
+
+        var rows: [[String]] = [[
+            "Date", "Description", "Merchant", "Amount", "Category",
+            "Account", "Status", "Reviewed", "Note", "Splits"
+        ]]
+        for tx in transactions.sorted(by: { $0.date > $1.date }) {
+            let category = tx.splits.isEmpty
+                ? (tx.categoryID.flatMap { categoryNames[$0] } ?? "")
+                : "(split)"
+            let splits = tx.splits.map { split in
+                let name = split.categoryID.flatMap { categoryNames[$0] } ?? "Uncategorized"
+                return name + ": " + String(describing: split.amount)
+            }.joined(separator: " | ")
+            rows.append([
+                day.string(from: tx.date),
+                tx.name,
+                tx.merchantName ?? "",
+                String(describing: tx.amount),
+                category,
+                accountNames[tx.accountID] ?? "",
+                tx.status.rawValue,
+                tx.isReviewed ? "yes" : "no",
+                tx.note ?? "",
+                splits
+            ])
+        }
+
+        let filename = "budget-transactions-" + day.string(from: Date()) + ".csv"
+        var headers = HTTPHeaders()
+        headers.contentType = HTTPMediaType(type: "text", subType: "csv",
+                                            parameters: ["charset": "utf-8"])
+        headers.contentDisposition = .init(.attachment, filename: filename)
+        return Response(status: .ok, headers: headers,
+                        body: .init(string: CSVWriter.encode(rows)))
+    }
+
+    // GET /v1/transactions/review-summary — counts for the dashboard's review row.
+    txs.get("review-summary") { req async throws -> ReviewSummary in
+        let (household, member) = try await req.requireMembership()
+        return try await req.transactions.reviewSummary(householdID: household.id, memberID: member.id)
     }
 
     // GET /v1/transactions/:id — detail with comments + reactions.
@@ -53,13 +122,61 @@ func registerTransactionRoutes(_ routes: RoutesBuilder) {
         return try await req.transactions.get(id: tx.id) ?? tx
     }
 
+    // POST /v1/transactions — add to a manual account. Linked accounts are
+    // bank-owned (400); only the account's owner may add, the same rule as
+    // editing the account itself.
+    txs.post { req async throws -> Transaction in
+        let (household, member) = try await req.requireMembership()
+        let body = try req.content.decode(CreateTransactionRequest.self)
+        guard let account = try await req.accounts.get(id: body.accountID),
+              account.householdID == household.id,
+              account.visibility == .shared || account.ownerMemberID == member.id else {
+            throw Abort(.notFound, reason: "Account not found")
+        }
+        guard account.isManual else {
+            throw Abort(.badRequest, reason: "Transactions on linked accounts come from the bank.")
+        }
+        guard account.ownerMemberID == member.id else {
+            throw Abort(.forbidden, reason: "Only the account owner can add to it.")
+        }
+        let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw Abort(.badRequest, reason: "Name can't be empty.") }
+        if let categoryID = body.categoryID {
+            guard let category = try await req.categories.get(id: categoryID),
+                  category.householdID == household.id else {
+                throw Abort(.notFound, reason: "Category not found")
+            }
+        }
+        let tx = Transaction(id: UUID(), householdID: household.id, accountID: account.id,
+                             ownerMemberID: account.ownerMemberID, amount: body.amount, date: body.date,
+                             name: name, merchantName: name, categoryID: body.categoryID,
+                             note: body.note, visibility: account.visibility, createdAt: Date())
+        try await req.transactions.insertManual(tx)
+        return tx
+    }
+
+    // DELETE /v1/transactions/:id — manual accounts only, owner only.
+    txs.delete(":id") { req async throws -> HTTPStatus in
+        let (tx, member) = try await loadVisible(req)
+        guard let account = try await req.accounts.get(id: tx.accountID), account.isManual else {
+            throw Abort(.badRequest, reason: "Transactions on linked accounts come from the bank and can't be deleted.")
+        }
+        guard account.ownerMemberID == member.id else {
+            throw Abort(.forbidden, reason: "Only the account owner can delete it.")
+        }
+        try await req.transactions.delete(id: tx.id)
+        return .noContent
+    }
+
     // POST /v1/transactions/:id/comments
     txs.post(":id", "comments") { req async throws -> TransactionComment in
         let (tx, member) = try await loadVisible(req)
         let body = try req.content.decode(AddCommentRequest.self)
         let text = body.body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw Abort(.badRequest, reason: "Comment can't be empty.") }
-        return try await req.activity.addComment(transactionID: tx.id, memberID: member.id, body: text)
+        let comment = try await req.activity.addComment(transactionID: tx.id, memberID: member.id, body: text)
+        await PushService.notifyComment(comment, on: tx, from: member, req: req)
+        return comment
     }
 
     // POST /v1/transactions/:id/reactions — toggle an emoji reaction for the member.

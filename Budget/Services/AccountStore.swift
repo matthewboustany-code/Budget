@@ -13,8 +13,14 @@ final class AccountStore {
     var isLoading = false
     var isLinking = false
     var errorMessage: String?
+    private(set) var lastLoaded: Date?
 
-    init(api: APIClient) { self.api = api }
+    init(api: APIClient) {
+        self.api = api
+        // Last-known data for the first frame; `load()` refreshes it.
+        accounts = api.cached("v1/accounts") ?? []
+        netWorth = api.cached("v1/networth")
+    }
 
     func load() async {
         isLoading = true
@@ -25,6 +31,7 @@ final class AccountStore {
             accounts = try await fetchedAccounts
             netWorth = try await fetchedNetWorth
             errorMessage = nil
+            lastLoaded = Date()
         } catch {
             errorMessage = friendly(error)
         }
@@ -32,6 +39,25 @@ final class AccountStore {
 
     /// Linked institutions the signed-in member owns, for the disconnect UI.
     var connections: [LinkedInstitution] = []
+
+    /// Balance history plus the most recent transactions for one account —
+    /// the detail screen's two panes. Not cached: it's per-account and the
+    /// screen is transient.
+    func history(for accountID: UUID, days: Int = 90)
+        async -> (history: AccountBalanceHistoryResponse, recent: [Transaction])? {
+        do {
+            let path = "v1/accounts/\(accountID.uuidString)/balances"
+            async let history: AccountBalanceHistoryResponse = api.get(
+                path, query: [.init(name: "days", value: String(days))])
+            async let page: TransactionPage = api.get(
+                "v1/transactions", query: [.init(name: "accountId", value: accountID.uuidString),
+                                           .init(name: "limit", value: "10")])
+            return try await (history, page.transactions)
+        } catch {
+            errorMessage = friendly(error)
+            return nil
+        }
+    }
 
     func loadConnections() async {
         do {
@@ -55,6 +81,66 @@ final class AccountStore {
             errorMessage = friendly(error)
             return false
         }
+    }
+
+    /// Creates a manual account (cash, an unsupported bank) and reloads.
+    @discardableResult
+    func createManualAccount(_ request: CreateManualAccountRequest) async -> Bool {
+        do {
+            let _: Account = try await api.post("v1/accounts", body: request)
+            await load()
+            return true
+        } catch {
+            errorMessage = friendly(error)
+            return false
+        }
+    }
+
+    /// Pull fresh balances and transactions from every bank the caller linked,
+    /// right now. Rate-limited server-side; returns false if refused or failed.
+    @discardableResult
+    func syncNow() async -> Bool {
+        do {
+            connections = try await api.post("v1/plaid/sync", body: Empty())
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = friendly(error)
+            return false
+        }
+    }
+
+    /// The most recent successful sync across the caller's connections.
+    var lastSyncedAt: Date? { connections.compactMap(\.lastSyncedAt).max() }
+
+    /// Connections that stopped syncing, for the "Needs attention" section.
+    var needsAttention: [LinkedInstitution] { connections.filter(\.status.needsAttention) }
+
+    /// A Link token in update mode, to re-authenticate one connection.
+    func fetchUpdateLinkToken(for connection: LinkedInstitution) async -> String? {
+        do {
+            let response: LinkTokenResponse = try await api.post(
+                "v1/plaid/items/\(connection.id.uuidString)/update-link-token", body: Empty())
+            return response.linkToken
+        } catch {
+            errorMessage = friendly(error)
+            return nil
+        }
+    }
+
+    /// After update mode succeeds: sync that connection now (which clears its
+    /// error server-side), then reload. Update mode repairs the existing item,
+    /// so there's no public token to exchange.
+    func finishReconnect(_ connection: LinkedInstitution) async {
+        do {
+            let _: LinkedInstitution = try await api.post(
+                "v1/plaid/items/\(connection.id.uuidString)/sync", body: Empty())
+            errorMessage = nil
+        } catch {
+            errorMessage = friendly(error)
+        }
+        await loadConnections()
+        await load()
     }
 
     /// Fetch a Plaid Link token to open Link on the device.

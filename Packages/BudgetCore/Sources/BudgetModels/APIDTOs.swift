@@ -32,13 +32,33 @@ public struct AuthResponse: Codable, Sendable {
     public var user: User
     public var household: Household?
     public var member: HouseholdMember?
+    /// Everyone in the household, so the app doesn't show only "you" until
+    /// the next `/me`. Defaults to empty for older servers.
+    public var members: [HouseholdMember]
 
-    public init(token: String, user: User, household: Household? = nil, member: HouseholdMember? = nil) {
+    public init(token: String, user: User, household: Household? = nil, member: HouseholdMember? = nil,
+                members: [HouseholdMember] = []) {
         self.token = token
         self.user = user
         self.household = household
         self.member = member
+        self.members = members
     }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        token = try c.decode(String.self, forKey: .token)
+        user = try c.decode(User.self, forKey: .user)
+        household = try c.decodeIfPresent(Household.self, forKey: .household)
+        member = try c.decodeIfPresent(HouseholdMember.self, forKey: .member)
+        members = try c.decodeIfPresent([HouseholdMember].self, forKey: .members) ?? []
+    }
+}
+
+/// `POST /v1/auth/refresh`: a fresh session token for a still-valid one.
+public struct SessionRefreshResponse: Codable, Sendable {
+    public var token: String
+    public init(token: String) { self.token = token }
 }
 
 /// The `GET /v1/me` payload: who I am and the household I'm in.
@@ -123,6 +143,62 @@ public struct TransactionPage: Codable, Sendable {
     }
 }
 
+/// Counts behind the dashboard's "to review" row, scoped to what the caller
+/// can see.
+public struct ReviewSummary: Codable, Sendable, Equatable {
+    public var unreviewed: Int
+    public var uncategorized: Int
+    public init(unreviewed: Int, uncategorized: Int) {
+        self.unreviewed = unreviewed
+        self.uncategorized = uncategorized
+    }
+}
+
+/// "Always file this merchant under this category." Keyed by
+/// `RecurringDetector.normalize` of the merchant name (or the name).
+public struct CategoryRule: Codable, Sendable, Identifiable, Equatable {
+    public var id: UUID
+    public var merchantKey: String
+    public var categoryID: UUID
+    public var createdAt: Date
+    public init(id: UUID, merchantKey: String, categoryID: UUID, createdAt: Date) {
+        self.id = id
+        self.merchantKey = merchantKey
+        self.categoryID = categoryID
+        self.createdAt = createdAt
+    }
+}
+
+/// Create (or repoint) the rule for this transaction's merchant.
+public struct CreateCategoryRuleRequest: Codable, Sendable {
+    public var transactionID: UUID
+    public var categoryID: UUID
+    public init(transactionID: UUID, categoryID: UUID) {
+        self.transactionID = transactionID
+        self.categoryID = categoryID
+    }
+}
+
+/// How many other visible transactions a rule for this merchant would
+/// recategorize (never counting ones a person categorized by hand).
+public struct CategoryRulePreview: Codable, Sendable, Equatable {
+    public var merchantKey: String
+    public var matchCount: Int
+    public init(merchantKey: String, matchCount: Int) {
+        self.merchantKey = merchantKey
+        self.matchCount = matchCount
+    }
+}
+
+public struct CreateCategoryRuleResponse: Codable, Sendable {
+    public var rule: CategoryRule
+    public var updatedCount: Int
+    public init(rule: CategoryRule, updatedCount: Int) {
+        self.rule = rule
+        self.updatedCount = updatedCount
+    }
+}
+
 /// Partial update to a transaction. Only non-nil fields are applied
 /// (PATCH semantics); `clearCategory` distinguishes "leave as-is" from
 /// "set to uncategorized".
@@ -164,10 +240,48 @@ public struct UpdateAccountRequest: Codable, Sendable {
     public var name: String?
     public var visibility: Visibility?
     public var isHidden: Bool?
-    public init(name: String? = nil, visibility: Visibility? = nil, isHidden: Bool? = nil) {
+    /// Manual accounts only; a linked account's balance comes from the bank.
+    public var currentBalance: Money?
+    public init(name: String? = nil, visibility: Visibility? = nil, isHidden: Bool? = nil,
+                currentBalance: Money? = nil) {
         self.name = name
         self.visibility = visibility
         self.isHidden = isHidden
+        self.currentBalance = currentBalance
+    }
+}
+
+/// `POST /v1/accounts`: a manual account. Plaid accounts only come from linking.
+public struct CreateManualAccountRequest: Codable, Sendable {
+    public var name: String
+    public var type: AccountType
+    public var visibility: Visibility
+    public var currentBalance: Money
+    public init(name: String, type: AccountType, visibility: Visibility = .shared, currentBalance: Money) {
+        self.name = name
+        self.type = type
+        self.visibility = visibility
+        self.currentBalance = currentBalance
+    }
+}
+
+/// `POST /v1/transactions`: a transaction on a manual account. Outflows are
+/// positive and inflows negative, the same convention as Plaid's.
+public struct CreateTransactionRequest: Codable, Sendable {
+    public var accountID: UUID
+    public var amount: Money
+    public var date: Date
+    public var name: String
+    public var categoryID: UUID?
+    public var note: String?
+    public init(accountID: UUID, amount: Money, date: Date, name: String,
+                categoryID: UUID? = nil, note: String? = nil) {
+        self.accountID = accountID
+        self.amount = amount
+        self.date = date
+        self.name = name
+        self.categoryID = categoryID
+        self.note = note
     }
 }
 
@@ -268,6 +382,8 @@ public struct CreateCategoryRequest: Codable, Sendable {
 public struct UpdateCategoryRequest: Codable, Sendable {
     public var name: String?
     public var icon: String?
+    /// Absent leaves the color untouched; an **empty string** clears it back to
+    /// automatic. One optional field can't express both otherwise.
     public var colorHex: String?
     public var sortOrder: Int?
     public var isArchived: Bool?
@@ -366,6 +482,45 @@ public struct AddContributionRequest: Codable, Sendable {
     }
 }
 
+/// One day's closing balance for a single account, from the nightly snapshot.
+public struct AccountBalancePoint: Codable, Sendable, Hashable, Identifiable {
+    public var date: Date
+    public var current: Money
+    public var available: Money?
+    public var id: Date { date }
+    public init(date: Date, current: Money, available: Money? = nil) {
+        self.date = date
+        self.current = current
+        self.available = available
+    }
+}
+
+/// `GET /v1/accounts/:id/balances` — the account plus its balance history.
+public struct AccountBalanceHistoryResponse: Codable, Sendable {
+    public var account: Account
+    public var points: [AccountBalancePoint]
+    public init(account: Account, points: [AccountBalancePoint]) {
+        self.account = account
+        self.points = points
+    }
+}
+
+/// Partial update to one contribution in a goal's ledger. Only non-nil fields
+/// are applied; `clearNote` distinguishes "leave the note" from "remove it".
+public struct UpdateContributionRequest: Codable, Sendable {
+    public var amount: Money?
+    public var date: Date?
+    public var note: String?
+    public var clearNote: Bool?
+    public init(amount: Money? = nil, date: Date? = nil, note: String? = nil,
+                clearNote: Bool? = nil) {
+        self.amount = amount
+        self.date = date
+        self.note = note
+        self.clearNote = clearNote
+    }
+}
+
 /// A goal plus its contribution history, for the detail screen.
 public struct GoalDetailResponse: Codable, Sendable {
     public var goal: Goal
@@ -429,14 +584,109 @@ public struct RegisterDeviceRequest: Codable, Sendable {
 }
 
 /// One linked institution, for the disconnect UI in Settings.
+/// Health of a linked institution. Anything but `.ok` means syncing has
+/// stopped until the owner reconnects through Link's update mode.
+public enum PlaidItemStatus: String, Codable, Sendable, Hashable {
+    case ok
+    /// Plaid rejected the item, e.g. ITEM_LOGIN_REQUIRED.
+    case error
+    /// Consent is about to lapse; reconnecting now avoids a gap.
+    case pendingExpiration = "pending_expiration"
+    /// The user revoked access at the bank.
+    case revoked
+
+    public var needsAttention: Bool { self != .ok }
+}
+
 public struct LinkedInstitution: Codable, Identifiable, Sendable, Hashable {
     public let id: UUID
     public let institutionName: String?
+    public let status: PlaidItemStatus
+    /// Plaid's error code when `status == .error`.
+    public let errorCode: String?
+    public let lastSyncedAt: Date?
 
-    public init(id: UUID, institutionName: String?) {
+    public init(id: UUID, institutionName: String?, status: PlaidItemStatus = .ok,
+                errorCode: String? = nil, lastSyncedAt: Date? = nil) {
         self.id = id
         self.institutionName = institutionName
+        self.status = status
+        self.errorCode = errorCode
+        self.lastSyncedAt = lastSyncedAt
+    }
+
+    /// Tolerates older servers (no health fields → `.ok`). An unknown status
+    /// from a newer one reads as `.error`: better to ask for a reconnect than
+    /// to hide a broken connection.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        institutionName = try c.decodeIfPresent(String.self, forKey: .institutionName)
+        if let raw = try c.decodeIfPresent(String.self, forKey: .status) {
+            status = PlaidItemStatus(rawValue: raw) ?? .error
+        } else {
+            status = .ok
+        }
+        errorCode = try c.decodeIfPresent(String.self, forKey: .errorCode)
+        lastSyncedAt = try c.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
     }
 
     public var displayName: String { institutionName ?? "Connected account" }
+}
+
+// MARK: - Partner activity feed (v1.1 §5.1)
+
+/// One thing the *other* household member did on a transaction — a comment or
+/// an emoji reaction. Denormalized on purpose: the feed shows who, what, and
+/// which charge in a single row, and a per-event round trip for the member
+/// name and the transaction would make the bell unusable.
+public struct ActivityEvent: Codable, Sendable, Hashable, Identifiable {
+    public enum Kind: String, Codable, Sendable {
+        case comment
+        case reaction
+    }
+
+    public var id: UUID
+    public var kind: Kind
+    public var createdAt: Date
+    public var memberID: UUID
+    public var memberName: String
+    public var transactionID: UUID
+    public var transactionName: String
+    public var transactionAmount: Money
+    /// Comment text, for `.comment` events.
+    public var body: String?
+    /// Reaction emoji, for `.reaction` events.
+    public var emoji: String?
+
+    public init(id: UUID, kind: Kind, createdAt: Date, memberID: UUID, memberName: String,
+                transactionID: UUID, transactionName: String, transactionAmount: Money,
+                body: String? = nil, emoji: String? = nil) {
+        self.id = id
+        self.kind = kind
+        self.createdAt = createdAt
+        self.memberID = memberID
+        self.memberName = memberName
+        self.transactionID = transactionID
+        self.transactionName = transactionName
+        self.transactionAmount = transactionAmount
+        self.body = body
+        self.emoji = emoji
+    }
+
+    /// One-line summary for the feed row and the push body.
+    public var summary: String {
+        switch kind {
+        case .comment: return body ?? ""
+        case .reaction: return "Reacted \(emoji ?? "")".trimmingCharacters(in: .whitespaces)
+        }
+    }
+}
+
+public struct ActivityFeedResponse: Codable, Sendable, Hashable {
+    public var events: [ActivityEvent]
+
+    public init(events: [ActivityEvent]) {
+        self.events = events
+    }
 }

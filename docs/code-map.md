@@ -19,6 +19,7 @@ here so the app and server can never disagree.
 | `Budgeting.swift` | `CategoryGroup`, `BudgetCategory`, monthly `Budget` (+ rollover flag), `BudgetProgress`, `MonthBudget`. |
 | `BillsGoals.swift` | `RecurringSeries`, `Bill` (a projected occurrence), `Goal`, `GoalContribution`. |
 | `Reporting.swift` | `NetWorthPoint`, `CashFlowSummary`, `SpendingByCategory`. |
+| `WidgetData.swift` | `WidgetSnapshot` (what the app hands its widgets through the App Group) + `WidgetSharing` names and coders. Pure Foundation: the file IO lives on each side because `containerURL(forSecurity…)` is Darwin-only. |
 | `APIDTOs.swift` | Every request/response envelope, phase by phase — auth, household, Plaid, transactions, budgets, recurring/bills, goals, reports, `APIErrorResponse`. |
 
 ### Sources/BudgetKit — pure calculation engine
@@ -67,9 +68,11 @@ computed properties).
 | `UserStore` / `HouseholdStore` | Users, households, memberships, invite codes. |
 | `AccountStore` | Accounts incl. visibility-scoped listing; net-worth inputs. |
 | `TransactionStore` | Visibility-join listing/pagination/search, PATCH updates, `upsertPlaid` (preserves user edits). |
-| `CategoryStore` | Category tree CRUD (delete = archive) + `CategorySeeder` (default tree, Plaid category mapping) + transfer-category lookup. |
+| `CategoryStore` | Category tree CRUD (delete = archive; on PATCH an **empty** `colorHex` clears the color back to automatic, since one optional field can't say both "leave it" and "clear it") + `CategorySeeder` (default tree, Plaid category mapping) + transfer-category lookup. |
+| `CategoryRuleStore` | Merchant → category rules keyed by `RecurringDetector.normalize`; `apply` upserts a rule and recategorizes visible matches whose `category_source` isn't `user`. |
+| `MerchantKeyMigration` | v11 re-keying of `recurring_series` / `category_rules` after `RecurringDetector.normalize` changed; recovers rule merchants via `legacyNormalize`. |
 | `BudgetStore` | Monthly budget upsert/list (storage only — math is BudgetKit's). |
-| `CommentReactionStore` | Honeydue comments + reactions. |
+| `CommentReactionStore` | Honeydue comments + reactions, plus `feed` — the partner activity feed (one UNION over both tables, same visibility join as `TransactionStore.list`, the caller's own events excluded). |
 | `RecurringStore` | Series listing (account-visibility scoped), PATCH, `mergeDetected` (detection owns numbers; user owns name/category/off-switch). |
 | `GoalStore` | Goals CRUD + contribution ledger (running total recomputed in the same write transaction). |
 | `NetWorthStore` / `PlaidItemStore` | Daily snapshots; encrypted Plaid items + sync cursors. |
@@ -88,16 +91,18 @@ computed properties).
 | File | Contents |
 |---|---|
 | `AccountSyncService.swift` | Link/exchange → account import; balance refresh. |
-| `TransactionSyncService.swift` | `/transactions/sync` cursor loop → upsert/categorize → triggers recurring re-detection. |
+| `TransactionSyncService.swift` | `/transactions/sync` cursor loop → upsert/categorize (household rule first, then Plaid's category) → triggers recurring re-detection. |
 | `RecurringService.swift` | Runs `RecurringDetector` over shared-visibility history, merges into storage. |
+| `PushService.swift` | APNs setup (sandbox + production containers from one key) and sends; prunes dead tokens. `notifyComment` is the activity feed's push half — best-effort, visibility-checked, threaded by transaction id. |
 | `SyncCommands.swift` | `sync-all` (nightly refresh, ends with a net-worth snapshot) + `networth-snapshot`. |
-| `BillReminderCommand.swift` | `bill-reminder` — logs overdue/due-soon bills per household (APNs is the planned follow-up). |
+| `BillReminderCommand.swift` | `bill-reminder` — logs overdue/due-soon bills per household and pushes one digest per household when APNs is configured. |
 
 ### Routes/ — one file per feature under `/v1`
 
 `Auth`, `Household`, `Plaid` (link/exchange/sandbox/webhook), `Account`
-(+ `/networth`), `Category`, `Transaction` (+ comments/reactions), `Budget`,
+(+ `/networth`), `Category`, `CategoryRule` (list/preview/create/delete), `Transaction` (+ comments/reactions, review-summary), `Budget`,
 `Recurring` (+ `/bills/upcoming`), `Goal`, `Report` (cashflow/spending),
+`Activity` (`GET /v1/activity?since=&limit=` — the partner feed), `Device`,
 `Health`. Every data route resolves membership and enforces per-item
 visibility; cross-household access reads as 404.
 
@@ -105,7 +110,8 @@ visibility; cross-household access reads as 404.
 
 `AuthHouseholdTests`, `PlaidSyncTests` (incl. the `MockPlaidTransport`
 fixtures), `BudgetTests`, `BillsGoalsTests`, `ReportsTests`,
-`HardeningTests` (config fail-fast, webhook signature verification).
+`HardeningTests` (config fail-fast, webhook signature verification),
+`ActivityFeedTests` (partner-only filtering, private-account chatter, `since=`).
 
 ### Deployment (Server/)
 
@@ -122,29 +128,53 @@ Caddy auto-TLS), `Caddyfile`, `scripts/sync-cron.sh`, `scripts/backup-db.sh`,
 | `BudgetApp.swift` | Entry point; injects `AppEnvironment`; onboarding vs. main gate. |
 | `AppEnvironment.swift` | `@MainActor @Observable` DI container holding every store; launch bootstrap. |
 | `Session.swift` | Auth state + Keychain-backed token. |
-| `RootTabView.swift` | Home / Accounts / Transactions / Budget / Settings tabs (`.sidebarAdaptable`). |
+| `RootTabView.swift` | Home / Accounts / Transactions / Budget / Settings tabs (`.sidebarAdaptable`); selection lives in `AppEnvironment.selectedTab` so one tab can open another. |
 | `TypeAliases.swift` | `Transaction`/`Budget` disambiguation (SwiftUI and the module name collide). |
 
 ### Services/
 
 | File | Contents |
 |---|---|
-| `APIClient.swift` | The single bearer-authenticated HTTP client (ISO8601, typed errors). |
+| `APIClient.swift` | The single bearer-authenticated HTTP client (ISO8601, typed errors); central 401 → sign-out. |
+| `ResponseCache.swift` | Last-good JSON per GET in Application Support; stores prefill from it at init. Cleared on sign-out. |
+| `Staleness.swift` | `StaleAware.isStale(after:)` (5 min) over each store's `lastLoaded`; screens refresh on `.task` when stale, and `AppEnvironment.refreshStale()` on foreground. |
 | `Keychain.swift` / `ServerConfig.swift` / `LaunchArgs.swift` | Token storage; base-URL resolution; DEBUG scripted-launch flags. |
 | `AuthStore` / `HouseholdStore` | Sign in with Apple (+ dev sign-in), household create/join/invite. |
 | `AccountStore` | Accounts + net worth; Plaid link-token/exchange/sandbox. |
-| `TransactionStore` / `CategoryStore` / `BudgetStore` | Feature state mirroring the corresponding endpoints. |
+| `TransactionStore` / `CategoryStore` / `BudgetStore` | Feature state mirroring the corresponding endpoints. `CategoryStore` loads archived rows too (`archived`, and names for old transactions) and owns category management + merchant rules. |
 | `BillsStore` / `GoalsStore` / `ReportsStore` | P5/P6 state: series + projected bills, goals + contributions, cashflow/spending. |
+| `ActivityStore` | Partner feed + the bell's unread count. "Unread" is a per-device last-seen timestamp in `UserDefaults`, never server state. |
 | `PlaidLinkPresenter.swift` | Wraps Plaid LinkKit. |
+| `WidgetSnapshotWriter.swift` | Publishes `WidgetSnapshot` into the App Group after a dashboard refresh and reloads WidgetKit timelines — but only when the content changed, since reloads are budgeted. Cleared on sign-out. |
 
 ### Features/ — one folder per screen
 
 `Onboarding` (sign-in → create/join household), `Dashboard` (Monarch-style
-home: net-worth sparkline, cash flow, budget bar, due-soon bills),
-`Accounts`, `Transactions` (list + detail with comments/reactions),
-`Budget` (month switcher, budget-vs-actual, set-budget sheet),
+home: activity bell, "N to review" row, net-worth sparkline, cash flow, budget bar,
+due-soon bills),
+`Accounts` (incl. "Needs attention" reconnect and `ManualEntrySheets.swift` for
+manual accounts/transactions), `Transactions` (list with filter sheet — review /
+uncategorized / account / category / dates — plus detail with comments/reactions,
+and `SplitEditorView.swift` for splitting one transaction across categories),
+`Budget` (month switcher, budget-vs-actual with per-category colored bars — overspend always overrides with red — and the set-budget sheet),
 `Bills` (Upcoming/Recurring segments, series toggles), `Goals` (progress
 list, detail + contribution ledger, create/edit sheets),
 `Reports` (Swift Charts: cashflow bars, spending bars, net-worth line),
-`Settings` (members, invite, connection status, sign out),
-`Shared/PlaceholderScreen` (onboarding placeholder).
+`Settings` (members, invite, connection status, sign out; `CategoriesView.swift`
+for category create/rename/icon/color/archive/restore/reorder and merchant rules),
+`Activity` (`ActivityView` — the partner feed behind the dashboard bell, plus
+`TransactionLoaderView`, which fetches a transaction the feed knows only by id),
+`Shared/PlaceholderScreen` (onboarding placeholder) and
+`Shared/CategoryColor.swift` (the swatch palette, the `#RRGGBB` → `Color`
+bridge, and the deterministic per-id fallback that colors categories nobody
+has picked a color for).
+
+## BudgetWidget/ — the widget extension
+
+A second target (`com.mbandhb.budget.widget`, Info.plist at
+`Config/BudgetWidget-Info.plist` so the synchronized source group can't copy it
+in as a resource). `BudgetWidget.swift` holds both widgets — "Budget left"
+(small / rectangular / circular) and "Next bill" (small / rectangular) — over
+one `SnapshotProvider` that reads the App Group file. The extension links
+`BudgetModels` only: it makes no network call and holds no session token, so
+the app is the single place that talks to the server.

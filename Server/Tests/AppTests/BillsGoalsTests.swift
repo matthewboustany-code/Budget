@@ -95,6 +95,20 @@ struct BillsGoalsTests {
         }
     }
 
+    /// A single extra charge for a merchant, used to pay off a projected bill.
+    private func seedCharge(_ app: Application, account: Account, merchant: String,
+                            amount: Money, daysAgo: Int) async throws {
+        try await app.appDatabase.dbPool.write { db in
+            let tx = BudgetModels.Transaction(
+                id: UUID(), householdID: account.householdID, accountID: account.id,
+                ownerMemberID: account.ownerMemberID, amount: amount,
+                date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date())!,
+                name: merchant, merchantName: merchant, visibility: .shared,
+                plaidTransactionID: "paid-\(merchant)-\(daysAgo)", createdAt: Date())
+            try TransactionStore.upsertPlaid(tx, db)
+        }
+    }
+
     private func refresh(_ app: Application, token: String) async throws -> [RecurringSeries] {
         var out: [RecurringSeries] = []
         try await app.testing().test(.POST, "v1/recurring/refresh", headers: bearer(token),
@@ -145,8 +159,11 @@ struct BillsGoalsTests {
             // Last charge was 5 days ago → next due in ~25 days, inside the
             // default 30-day window.
             let bills = try await upcomingBills(app, token: alice.token)
-            let bill = try #require(bills.first { $0.recurringSeriesID == spotify.id })
-            #expect(bill.status == .upcoming)
+            let spotifyBills = bills.filter { $0.recurringSeriesID == spotify.id }
+            // The charge 5 days ago settled its own occurrence, which the
+            // look-back surfaces as paid ahead of the one still due.
+            #expect(spotifyBills.first?.status == .paid)
+            let bill = try #require(spotifyBills.first { $0.status == .upcoming })
             #expect(bill.amount == Decimal(string: "9.99"))
             #expect(bill.dueDate > Date())
         }
@@ -165,6 +182,31 @@ struct BillsGoalsTests {
             let bills = try await upcomingBills(app, token: alice.token)
             let gym = try #require(bills.first { $0.name.lowercased().contains("gym") })
             #expect(gym.status == .overdue)
+        }
+    }
+
+    @Test("A charge that lands on the due date marks the bill paid")
+    func chargeMarksBillPaid() async throws {
+        try await withApp { app in
+            let alice = try await setupAlice(app)
+            let checking = try #require(try await accounts(app, token: alice.token).first { $0.type == .checking })
+            // Last charge 30 days ago → next due ~today.
+            try await seedMonthly(app, account: checking, merchant: "Water Bill",
+                                  amount: 60, lastDaysAgo: 30)
+            _ = try await refresh(app, token: alice.token)
+
+            let before = try await upcomingBills(app, token: alice.token)
+            let due = try #require(before.first { $0.name.lowercased().contains("water") })
+            #expect(due.status != .paid)
+
+            // This month's charge posts; detection is NOT re-run, so the
+            // occurrence is still projected and must flip to paid.
+            try await seedCharge(app, account: checking, merchant: "Water Bill",
+                                 amount: 60, daysAgo: 0)
+            let after = try await upcomingBills(app, token: alice.token)
+            let paid = try #require(after.first { $0.name.lowercased().contains("water") })
+            #expect(paid.status == .paid)
+            #expect(paid.dueDate == due.dueDate)
         }
     }
 
@@ -194,6 +236,36 @@ struct BillsGoalsTests {
             #expect(matches.count == 1)
             #expect(matches.first?.isActive == false)
             #expect(matches.first?.id == spotify.id)
+        }
+    }
+
+    @Test("A lapsed series goes inactive, then comes back when charges resume")
+    func lapsedSeriesReactivates() async throws {
+        try await withApp { app in
+            let alice = try await setupAlice(app)
+            let checking = try #require(try await accounts(app, token: alice.token).first { $0.type == .checking })
+            // Last charge 100 days ago — more than two monthly cadences — so detection
+            // reports the series inactive.
+            try await seedMonthly(app, account: checking, merchant: "Hulu", amount: 18, lastDaysAgo: 100)
+            let lapsed = try #require(try await refresh(app, token: alice.token)
+                .first { $0.name.lowercased().contains("hulu") })
+            #expect(lapsed.isActive == false)
+
+            // Charges resume. Distinct plaid ids so these add rather than update.
+            try await app.appDatabase.dbPool.write { db in
+                for daysAgo in [40, 10] {
+                    try TransactionStore.upsertPlaid(BudgetModels.Transaction(
+                        id: UUID(), householdID: checking.householdID, accountID: checking.id,
+                        ownerMemberID: checking.ownerMemberID, amount: 18,
+                        date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date())!,
+                        name: "Hulu", merchantName: "Hulu",
+                        plaidTransactionID: "resumed-hulu-\(daysAgo)", createdAt: Date()), db)
+                }
+            }
+            let resumed = try #require(try await refresh(app, token: alice.token)
+                .first { $0.name.lowercased().contains("hulu") })
+            #expect(resumed.id == lapsed.id)
+            #expect(resumed.isActive)
         }
     }
 
@@ -268,6 +340,87 @@ struct BillsGoalsTests {
     }
 
     // MARK: - Goals
+
+    @Test("Editing and deleting a contribution recomputes the goal total")
+    func contributionEditAndDelete() async throws {
+        try await withApp { app in
+            let alice = try await setupAlice(app)
+            var goal: Goal?
+            try await app.testing().test(.POST, "v1/goals", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(CreateGoalRequest(name: "Roof", targetAmount: 5000)) },
+                afterResponse: { res async throws in goal = try res.content.decode(Goal.self) })
+            let roof = try #require(goal)
+
+            // Two entries, the first mistyped as 5000 instead of 500.
+            var detail: GoalDetailResponse?
+            try await app.testing().test(.POST, "v1/goals/\(roof.id)/contributions", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(AddContributionRequest(amount: 5000, note: "oops")) },
+                afterResponse: { res async throws in detail = try res.content.decode(GoalDetailResponse.self) })
+            try await app.testing().test(.POST, "v1/goals/\(roof.id)/contributions", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(AddContributionRequest(amount: 250)) },
+                afterResponse: { res async throws in detail = try res.content.decode(GoalDetailResponse.self) })
+            let funded = try #require(detail)
+            let typo = try #require(funded.contributions.first { $0.amount == 5000 })
+            #expect(funded.goal.currentAmount == 5250)
+
+            // Fix the amount → the total follows, in the same transaction.
+            try await app.testing().test(.PATCH, "v1/goals/\(roof.id)/contributions/\(typo.id)",
+                headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateContributionRequest(amount: 500, clearNote: true)) },
+                afterResponse: { res async throws in
+                    let d = try res.content.decode(GoalDetailResponse.self)
+                    #expect(d.goal.currentAmount == 750)
+                    #expect(d.contributions.first { $0.id == typo.id }?.note == nil)
+                })
+
+            // Delete the other one → total drops again, ledger shrinks.
+            let other = try #require(funded.contributions.first { $0.amount == 250 })
+            try await app.testing().test(.DELETE, "v1/goals/\(roof.id)/contributions/\(other.id)",
+                headers: bearer(alice.token),
+                afterResponse: { res async throws in
+                    let d = try res.content.decode(GoalDetailResponse.self)
+                    #expect(d.goal.currentAmount == 500)
+                    #expect(d.contributions.count == 1)
+                })
+
+            // Zero is refused, and an unknown id is 404 (not 403).
+            try await app.testing().test(.PATCH, "v1/goals/\(roof.id)/contributions/\(typo.id)",
+                headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateContributionRequest(amount: 0)) },
+                afterResponse: { res async in #expect(res.status == .badRequest) })
+            try await app.testing().test(.DELETE, "v1/goals/\(roof.id)/contributions/\(UUID())",
+                headers: bearer(alice.token),
+                afterResponse: { res async in #expect(res.status == .notFound) })
+        }
+    }
+
+    @Test("A partner's contribution can't be reached through another household's goal")
+    func contributionIsolation() async throws {
+        try await withApp { app in
+            let alice = try await setupAlice(app)
+            var goal: Goal?
+            try await app.testing().test(.POST, "v1/goals", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(CreateGoalRequest(name: "Car", targetAmount: 9000)) },
+                afterResponse: { res async throws in goal = try res.content.decode(Goal.self) })
+            let car = try #require(goal)
+            var detail: GoalDetailResponse?
+            try await app.testing().test(.POST, "v1/goals/\(car.id)/contributions", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(AddContributionRequest(amount: 300)) },
+                afterResponse: { res async throws in detail = try res.content.decode(GoalDetailResponse.self) })
+            let seeded = try #require(detail)
+            let entry = try #require(seeded.contributions.first)
+
+            // An outsider with their own household sees 404 for both the goal
+            // and the contribution — never 403, which would confirm existence.
+            let carol = try await signIn(app, "dev:carol", "Carol")
+            try await app.testing().test(.POST, "v1/household", headers: bearer(carol.token),
+                beforeRequest: { try $0.content.encode(CreateHouseholdRequest(name: "Other", memberDisplayName: "Carol")) },
+                afterResponse: { _ async in })
+            try await app.testing().test(.DELETE, "v1/goals/\(car.id)/contributions/\(entry.id)",
+                headers: bearer(carol.token),
+                afterResponse: { res async in #expect(res.status == .notFound) })
+        }
+    }
 
     @Test("Create, fund, edit, and delete a goal; totals track contributions")
     func goalLifecycle() async throws {

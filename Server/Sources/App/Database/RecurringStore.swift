@@ -60,8 +60,8 @@ struct RecurringStore {
                                arguments: [categoryID.uuidString, id.uuidString])
             }
             if let isActive = body.isActive {
-                try db.execute(sql: "UPDATE recurring_series SET is_active = ? WHERE id = ?",
-                               arguments: [isActive ? 1 : 0, id.uuidString])
+                try db.execute(sql: "UPDATE recurring_series SET is_active = ?, user_disabled = ? WHERE id = ?",
+                               arguments: [isActive ? 1 : 0, isActive ? 0 : 1, id.uuidString])
             }
         }
     }
@@ -72,22 +72,23 @@ struct RecurringStore {
     /// matching on it would orphan a renamed series and re-insert a duplicate
     /// under the merchant name on the next run. Detection owns the numbers
     /// (amount, cadence, dates, account); the user owns the words and the
-    /// switch (name, category once set, and `isActive` — a series the user
-    /// turned off never turns itself back on). Stored series the detector no
-    /// longer reports are left alone.
+    /// switch (name, category once set, and `user_disabled` — a series the user
+    /// turned off never turns itself back on). A series detection finds lapsed
+    /// goes inactive but comes back when charges resume. Stored series the
+    /// detector no longer reports are left alone.
     func mergeDetected(householdID: UUID, detected: [RecurringSeries]) async throws {
         try await db.write { db in
-            struct Stored { let id: String; let categoryID: UUID?; let isActive: Bool }
+            struct Stored { let id: String; let categoryID: UUID?; let userDisabled: Bool }
             var existingByKey: [String: Stored] = [:]
             for row in try Row.fetchAll(
-                db, sql: "SELECT id, merchant_key, category_id, is_active FROM recurring_series WHERE household_id = ?",
+                db, sql: "SELECT id, merchant_key, category_id, user_disabled FROM recurring_series WHERE household_id = ?",
                 arguments: [householdID.uuidString]) {
                 let key: String = row["merchant_key"] ?? ""
                 // First row wins (a pre-fix duplicate can't resurrect itself).
                 if existingByKey[key] == nil {
                     existingByKey[key] = Stored(id: row["id"],
                                                 categoryID: DBFormat.uuid(row["category_id"]),
-                                                isActive: DBFormat.bool(row["is_active"]))
+                                                userDisabled: DBFormat.bool(row["user_disabled"]))
                 }
             }
 
@@ -104,7 +105,7 @@ struct RecurringStore {
                             series.accountID?.uuidString,
                             series.lastDate.map(DBFormat.string), series.nextDate.map(DBFormat.string),
                             (stored.categoryID ?? series.categoryID)?.uuidString,
-                            (stored.isActive && series.isActive) ? 1 : 0,
+                            (series.isActive && !stored.userDisabled) ? 1 : 0,
                             stored.id])
                 } else {
                     try db.execute(sql: """

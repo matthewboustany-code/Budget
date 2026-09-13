@@ -41,6 +41,12 @@ struct SettingsView: View {
             }
 
             Section {
+                NavigationLink { CategoriesView() } label: {
+                    Label("Categories", systemImage: "square.grid.2x2")
+                }
+            }
+
+            Section {
                 Button {
                     showServerEditor = true
                 } label: {
@@ -56,8 +62,8 @@ struct SettingsView: View {
                 Text("Backend")
             } footer: {
                 if ServerConfig.isUsingFallback {
-                    Text("localhost only works in the Simulator. On this device, "
-                         + "tap Server and enter the address your backend runs on.")
+                    Text("Using the default server. Tap Server to point this "
+                         + "install at a different backend.")
                 }
             }
 
@@ -75,7 +81,20 @@ struct SettingsView: View {
                 Section {
                     ForEach(env.accountStore.connections) { connection in
                         HStack {
-                            Text(connection.displayName)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(connection.displayName)
+                                Group {
+                                    if connection.status.needsAttention {
+                                        Text(connection.status.explanation).foregroundStyle(.orange)
+                                    } else if let synced = connection.lastSyncedAt {
+                                        Text("Synced \(synced.formatted(.relative(presentation: .named)))")
+                                    } else {
+                                        Text("Not synced yet")
+                                    }
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
                             Spacer()
                             Button("Disconnect") { connectionToDisconnect = connection }
                                 .buttonStyle(.borderless)

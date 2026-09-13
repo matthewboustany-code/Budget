@@ -13,6 +13,7 @@ final class GoalsStore {
     var goals: [Goal] = []
     var isLoading = false
     var errorMessage: String?
+    private(set) var lastLoaded: Date?
 
     init(api: APIClient) { self.api = api }
 
@@ -22,6 +23,7 @@ final class GoalsStore {
         do {
             goals = try await api.get("v1/goals")
             errorMessage = nil
+            lastLoaded = Date()
         } catch {
             errorMessage = friendly(error)
         }
@@ -84,6 +86,37 @@ final class GoalsStore {
             let detail: GoalDetailResponse = try await api.post(
                 "v1/goals/\(goalID.uuidString)/contributions",
                 body: AddContributionRequest(amount: amount, note: note))
+            replace(detail.goal)
+            errorMessage = nil
+            return detail
+        } catch {
+            errorMessage = friendly(error)
+            return nil
+        }
+    }
+
+    /// Correct a mistyped entry. The server recomputes the running total in
+    /// the same transaction, so the returned detail is authoritative.
+    func editContribution(_ goalID: UUID, contributionID: UUID,
+                          amount: Money, note: String?) async -> GoalDetailResponse? {
+        do {
+            let detail: GoalDetailResponse = try await api.patch(
+                "v1/goals/\(goalID.uuidString)/contributions/\(contributionID.uuidString)",
+                body: UpdateContributionRequest(amount: amount, note: note,
+                                                clearNote: note == nil ? true : nil))
+            replace(detail.goal)
+            errorMessage = nil
+            return detail
+        } catch {
+            errorMessage = friendly(error)
+            return nil
+        }
+    }
+
+    func deleteContribution(_ goalID: UUID, contributionID: UUID) async -> GoalDetailResponse? {
+        do {
+            let detail: GoalDetailResponse = try await api.delete(
+                "v1/goals/\(goalID.uuidString)/contributions/\(contributionID.uuidString)")
             replace(detail.goal)
             errorMessage = nil
             return detail

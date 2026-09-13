@@ -15,6 +15,7 @@ struct DashboardView: View {
             if let error = env.reportsStore.errorMessage {
                 Section { Text(error).foregroundStyle(.red).font(.footnote) }
             }
+            reviewSection
             cashFlowSection
             budgetSection
             billsSection
@@ -28,9 +29,10 @@ struct DashboardView: View {
             }
         }
         .navigationTitle("Budget")
+        .toolbar { activityBell }
         .refreshable { await reload() }
         .task {
-            if env.reportsStore.cashFlow.isEmpty { await reload() }
+            if env.reportsStore.isStale() { await reload() }
         }
     }
 
@@ -38,8 +40,60 @@ struct DashboardView: View {
         async let reports: Void = env.reportsStore.load()
         async let bills: Void = env.billsStore.load()
         async let accounts: Void = env.accountStore.load()
-        async let budget: Void = env.budgetStore.load()
-        _ = await (reports, bills, accounts, budget)
+        async let budget = env.budgetStore.loadCurrentMonth()
+        async let review: Void = env.transactionStore.loadReviewSummary()
+        async let activity: Void = env.activityStore.load()
+        _ = await (reports, bills, accounts, budget, review, activity)
+        env.publishWidgetSnapshot()
+    }
+
+    // MARK: - Activity bell
+
+    /// Badge count is local (a last-seen timestamp per device) — see
+    /// `ActivityStore`. Always shown so the feed is reachable when it's empty.
+    private var activityBell: some ToolbarContent {
+        let count = env.activityStore.unreadCount
+        return ToolbarItem(placement: .topBarTrailing) {
+            NavigationLink { ActivityView() } label: {
+                // Hand-drawn badge: `.badge` is a List/TabView modifier and
+                // does nothing on a toolbar item. The two states are separate
+                // images because a monochrome symbol takes the *first* style
+                // of a palette pair — a shared modifier turns the read bell red.
+                if count > 0 {
+                    Image(systemName: "bell.badge.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.red, .primary)
+                } else {
+                    Image(systemName: "bell")
+                }
+            }
+            .accessibilityLabel(count > 0 ? "Activity, \(count) new" : "Activity")
+        }
+    }
+
+    // MARK: - Review inbox
+
+    /// The weekly reconcile loop: opens Transactions narrowed to what nobody
+    /// has marked reviewed yet. Switches tabs rather than pushing a list here —
+    /// the list's value-based links don't fire inside Home's pushed views.
+    @ViewBuilder
+    private var reviewSection: some View {
+        if let count = env.transactionStore.reviewSummary?.unreviewed, count > 0 {
+            Section {
+                Button {
+                    env.transactionStore.filter = .needsReview
+                    env.selectedTab = .transactions
+                } label: {
+                    HStack {
+                        Label("\(count) to review", systemImage: "tray.full")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    }
+                }
+                .foregroundStyle(.primary)
+            }
+        }
     }
 
     // MARK: - Net worth
@@ -94,8 +148,8 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var budgetSection: some View {
-        if let rollup = env.budgetStore.rollup {
-            let budgeted = rollup.entries.filter { $0.budgeted + $0.rolloverIn > 0 }
+        if let rollup = env.budgetStore.currentRollup {
+            let budgeted = rollup.budgetedEntries
             if !budgeted.isEmpty {
                 let limit = budgeted.reduce(Money(0)) { $0 + $1.budgeted + $1.rolloverIn }
                 let spent = budgeted.reduce(Money(0)) { $0 + $1.spent }
@@ -124,7 +178,9 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var billsSection: some View {
-        let due = env.billsStore.bills.prefix(3)
+        // "Due soon" means still owed — a matched charge takes the bill off
+        // the dashboard; the Bills screen keeps it under Paid.
+        let due = env.billsStore.bills.filter { $0.status != .paid }.prefix(3)
         Section {
             ForEach(due) { bill in
                 HStack {

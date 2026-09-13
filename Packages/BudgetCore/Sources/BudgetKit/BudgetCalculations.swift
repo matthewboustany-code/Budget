@@ -80,19 +80,64 @@ public enum BudgetCalculator {
 
     /// Full month rollup across all categories that have either a budget or
     /// spending. Categories with neither are omitted.
+    ///
+    /// Same results as calling `progress` per category, without its cost:
+    /// that path rescans every transaction once per category per rollover
+    /// level (~4M comparisons for 20 categories × 36 months × 6k rows). Here
+    /// spend is bucketed by (category, month) in one pass, and each month's
+    /// rollover is computed once per category.
     public static func monthBudget(month: Month, categories: [BudgetCategory],
                                    transactions: [Transaction],
                                    budgets: [Budget],
                                    calendar: Calendar = .current) -> MonthBudget {
         let byKey = Dictionary(budgets.map { (key($0.categoryID, $0.month), $0) },
                                uniquingKeysWith: { a, _ in a })
+        let spentByKey = spentBuckets(transactions, calendar: calendar)
         let entries = categories.compactMap { category -> BudgetProgress? in
-            let p = progress(categoryID: category.id, month: month,
-                             transactions: transactions,
-                             budgetsByCategoryMonth: byKey, calendar: calendar)
+            let budget = byKey[key(category.id, month)]
+            let rolloverIn = budget?.rolloverEnabled == true
+                ? bucketedRollover(into: month, categoryID: category.id,
+                                   budgets: byKey, spent: spentByKey)
+                : 0
+            let p = BudgetProgress(categoryID: category.id, month: month,
+                                   budgeted: budget?.amount ?? 0, rolloverIn: rolloverIn,
+                                   spent: spentByKey[key(category.id, month)] ?? 0)
             return (p.budgeted == 0 && p.spent == 0 && p.rolloverIn == 0) ? nil : p
         }
         return MonthBudget(month: month, entries: entries)
+    }
+
+    /// Spend per `"<categoryID>|<YYYY-MM>"` in a single pass, honoring splits.
+    /// Uncategorized amounts are dropped — no budget can own them.
+    static func spentBuckets(_ transactions: [Transaction], calendar: Calendar) -> [String: Money] {
+        var buckets: [String: Money] = [:]
+        for tx in transactions {
+            let month = Month(date: tx.date, calendar: calendar)
+            for part in categoryAmounts(for: tx) {
+                guard let categoryID = part.categoryID else { continue }
+                buckets[key(categoryID, month), default: 0] += part.amount
+            }
+        }
+        return buckets
+    }
+
+    /// `rollover(into:)` over the buckets. Walks back to the start of the
+    /// rollover chain once, then carries forward — linear in chain length,
+    /// where the recursive version re-scanned transactions at every level.
+    private static func bucketedRollover(into month: Month, categoryID: UUID,
+                                         budgets: [String: Budget],
+                                         spent: [String: Money]) -> Money {
+        var chain: [(budget: Budget, month: Month)] = []
+        var cursor = month.previous
+        while let budget = budgets[key(categoryID, cursor)], budget.rolloverEnabled {
+            chain.append((budget, cursor))
+            cursor = cursor.previous
+        }
+        var carried: Money = 0
+        for (budget, m) in chain.reversed() {
+            carried = budget.amount + carried - (spent[key(categoryID, m)] ?? 0)
+        }
+        return carried
     }
 
     static func key(_ categoryID: UUID, _ month: Month) -> String {

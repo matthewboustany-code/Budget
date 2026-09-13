@@ -18,7 +18,13 @@ final class AppEnvironment {
     let billsStore: BillsStore
     let goalsStore: GoalsStore
     let reportsStore: ReportsStore
+    let activityStore: ActivityStore
     let pushRegistrar: PushRegistrar
+
+    /// The selected root tab — here, not in RootTabView, so a card on one tab
+    /// (the dashboard's review row) can send the user to another.
+    var selectedTab: RootTabView.TabID = LaunchArgs.value(for: "-startTab")
+        .flatMap(RootTabView.TabID.init(rawValue:)) ?? .home
 
     /// Result of the last `/health` probe, shown in Settings.
     var connectionStatus: ConnectionStatus = .unknown
@@ -40,8 +46,23 @@ final class AppEnvironment {
         self.billsStore = BillsStore(api: api)
         self.goalsStore = GoalsStore(api: api)
         self.reportsStore = ReportsStore(api: api)
+        self.activityStore = ActivityStore(api: api)
         self.pushRegistrar = PushRegistrar(api: api)
+        // One place turns an expired session into a sign-out, whichever
+        // request discovers it.
+        api.onUnauthorized = { [weak session] in session?.signOut() }
+        // Changing the server URL signs out too, so this covers both. The
+        // widgets are cleared alongside the cache — a signed-out app must not
+        // leave the household's balances on someone's Lock Screen.
+        session.onSignOut = { [weak api] in
+            api?.cache.clear()
+            WidgetSnapshotWriter.clear()
+        }
     }
+
+    /// The server was unreachable at the last `/me`; the UI is running on the
+    /// cached household.
+    var isOffline: Bool { householdStore.isOffline }
 
     /// On launch, if a session token exists, refresh identity + household from
     /// the server (signs out on 401). In DEBUG, honors scripted launch args.
@@ -55,6 +76,7 @@ final class AppEnvironment {
         }
         #endif
         guard session.isSignedIn else { return }
+        await authStore.refreshSessionIfNeeded()
         isBootstrapping = true
         await householdStore.refresh()
         isBootstrapping = false
@@ -65,7 +87,38 @@ final class AppEnvironment {
             // prompting on the sign-in screen asks for a permission that has
             // nothing to explain it yet.
             await pushRegistrar.requestAuthorizationAndRegister()
+            // Budget and bills aren't loaded at launch (the dashboard's own
+            // `.task` does that), so this publishes whatever the response
+            // cache prefilled — enough to keep a widget warm across a cold
+            // start, and the dashboard overwrites it moments later.
+            publishWidgetSnapshot()
         }
+    }
+
+    /// On returning to the foreground, reload whatever has gone stale. A
+    /// visible tab's `.task` doesn't re-run on foreground, so without this an
+    /// app left open overnight shows yesterday's numbers until pulled.
+    func refreshStale() async {
+        guard session.isSignedIn, session.household != nil else { return }
+        await authStore.refreshSessionIfNeeded()
+        await householdStore.refresh()   // also clears the offline banner
+        if accountStore.isStale() { await accountStore.load() }
+        if transactionStore.isStale() { await transactionStore.load() }
+        if reportsStore.isStale() {
+            await reportsStore.load()
+            await budgetStore.loadCurrentMonth()
+        }
+        if budgetStore.isStale() { await budgetStore.load() }
+        if billsStore.isStale() { await billsStore.load() }
+        if activityStore.isStale() { await activityStore.load() }
+        publishWidgetSnapshot()
+    }
+
+    /// Hands the widgets the numbers the app just loaded. Called after a
+    /// refresh rather than on a schedule — the extension has no session token
+    /// and never fetches, so this is the only way its data moves.
+    func publishWidgetSnapshot() {
+        WidgetSnapshotWriter.publish(budget: budgetStore, bills: billsStore)
     }
 
     enum ConnectionStatus: Equatable {

@@ -96,18 +96,68 @@ struct GoalStore {
                 """, arguments: [contribution.id.uuidString, goalID.uuidString,
                                  DBFormat.string(amount), DBFormat.string(date),
                                  memberID.uuidString, note])
-            let amounts = try String.fetchAll(
-                db, sql: "SELECT amount FROM goal_contributions WHERE goal_id = ?",
-                arguments: [goalID.uuidString])
-            let total = amounts.reduce(Money(0)) { $0 + DBFormat.money($1) }
-            try db.execute(sql: "UPDATE goals SET current_amount = ? WHERE id = ?",
-                           arguments: [DBFormat.string(total), goalID.uuidString])
-            guard let goal = try Row.fetchOne(db, sql: "SELECT * FROM goals WHERE id = ?",
-                                              arguments: [goalID.uuidString]).map(Goal.init(row:)) else {
-                throw Abort(.internalServerError, reason: "Goal vanished during contribution")
-            }
+            let goal = try Self.recomputeTotal(goalID: goalID, db)
             return (goal, contribution)
         }
+    }
+
+    /// One contribution in the ledger, scoped to its goal so a caller can't
+    /// reach another household's row by id alone.
+    func contribution(id: UUID, goalID: UUID) async throws -> GoalContribution? {
+        try await db.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM goal_contributions WHERE id = ? AND goal_id = ?",
+                             arguments: [id.uuidString, goalID.uuidString])
+                .map(GoalContribution.init(row:))
+        }
+    }
+
+    /// PATCH semantics: only non-nil fields are applied. The goal's running
+    /// total is recomputed in the same transaction as the edit, so the ledger
+    /// and `current_amount` can never disagree.
+    func updateContribution(id: UUID, goalID: UUID,
+                            _ body: UpdateContributionRequest) async throws -> Goal {
+        try await db.write { db in
+            if let amount = body.amount {
+                try db.execute(sql: "UPDATE goal_contributions SET amount = ? WHERE id = ? AND goal_id = ?",
+                               arguments: [DBFormat.string(amount), id.uuidString, goalID.uuidString])
+            }
+            if let date = body.date {
+                try db.execute(sql: "UPDATE goal_contributions SET date = ? WHERE id = ? AND goal_id = ?",
+                               arguments: [DBFormat.string(date), id.uuidString, goalID.uuidString])
+            }
+            if body.clearNote == true {
+                try db.execute(sql: "UPDATE goal_contributions SET note = NULL WHERE id = ? AND goal_id = ?",
+                               arguments: [id.uuidString, goalID.uuidString])
+            } else if let note = body.note {
+                try db.execute(sql: "UPDATE goal_contributions SET note = ? WHERE id = ? AND goal_id = ?",
+                               arguments: [note, id.uuidString, goalID.uuidString])
+            }
+            return try Self.recomputeTotal(goalID: goalID, db)
+        }
+    }
+
+    func deleteContribution(id: UUID, goalID: UUID) async throws -> Goal {
+        try await db.write { db in
+            try db.execute(sql: "DELETE FROM goal_contributions WHERE id = ? AND goal_id = ?",
+                           arguments: [id.uuidString, goalID.uuidString])
+            return try Self.recomputeTotal(goalID: goalID, db)
+        }
+    }
+
+    /// Sum the ledger and write it back to the goal. Always called inside the
+    /// caller's write transaction — never on its own.
+    private static func recomputeTotal(goalID: UUID, _ db: Database) throws -> Goal {
+        let amounts = try String.fetchAll(
+            db, sql: "SELECT amount FROM goal_contributions WHERE goal_id = ?",
+            arguments: [goalID.uuidString])
+        let total = amounts.reduce(Money(0)) { $0 + DBFormat.money($1) }
+        try db.execute(sql: "UPDATE goals SET current_amount = ? WHERE id = ?",
+                       arguments: [DBFormat.string(total), goalID.uuidString])
+        guard let goal = try Row.fetchOne(db, sql: "SELECT * FROM goals WHERE id = ?",
+                                          arguments: [goalID.uuidString]).map(Goal.init(row:)) else {
+            throw Abort(.internalServerError, reason: "Goal vanished during contribution")
+        }
+        return goal
     }
 }
 

@@ -23,6 +23,9 @@ public struct Account: Codable, Sendable, Hashable, Identifiable {
     /// Hidden accounts stay linked and synced but are excluded from totals and
     /// most lists (e.g. a closed card kept for history).
     public var isHidden: Bool
+    /// Entered by hand (cash, a bank Plaid doesn't support, a loan to a
+    /// friend): its owner sets the balance and adds its transactions.
+    public var isManual: Bool
     public var plaidAccountID: String?
     public var lastSyncedAt: Date?
     public var createdAt: Date
@@ -32,7 +35,7 @@ public struct Account: Codable, Sendable, Hashable, Identifiable {
                 currentBalance: Money, availableBalance: Money? = nil,
                 currencyCode: String = "USD", institutionName: String? = nil,
                 mask: String? = nil, visibility: Visibility = .shared,
-                isHidden: Bool = false, plaidAccountID: String? = nil,
+                isHidden: Bool = false, isManual: Bool = false, plaidAccountID: String? = nil,
                 lastSyncedAt: Date? = nil, createdAt: Date) {
         self.id = id
         self.householdID = householdID
@@ -47,9 +50,33 @@ public struct Account: Codable, Sendable, Hashable, Identifiable {
         self.mask = mask
         self.visibility = visibility
         self.isHidden = isHidden
+        self.isManual = isManual
         self.plaidAccountID = plaidAccountID
         self.lastSyncedAt = lastSyncedAt
         self.createdAt = createdAt
+    }
+
+    /// `isManual` defaults to false when absent — older servers, and account
+    /// lists already in the app's response cache, don't carry it.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        householdID = try c.decode(UUID.self, forKey: .householdID)
+        ownerMemberID = try c.decode(UUID.self, forKey: .ownerMemberID)
+        name = try c.decode(String.self, forKey: .name)
+        officialName = try c.decodeIfPresent(String.self, forKey: .officialName)
+        type = try c.decode(AccountType.self, forKey: .type)
+        currentBalance = try c.decode(Money.self, forKey: .currentBalance)
+        availableBalance = try c.decodeIfPresent(Money.self, forKey: .availableBalance)
+        currencyCode = try c.decode(String.self, forKey: .currencyCode)
+        institutionName = try c.decodeIfPresent(String.self, forKey: .institutionName)
+        mask = try c.decodeIfPresent(String.self, forKey: .mask)
+        visibility = try c.decode(Visibility.self, forKey: .visibility)
+        isHidden = try c.decode(Bool.self, forKey: .isHidden)
+        isManual = try c.decodeIfPresent(Bool.self, forKey: .isManual) ?? false
+        plaidAccountID = try c.decodeIfPresent(String.self, forKey: .plaidAccountID)
+        lastSyncedAt = try c.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
     }
 
     /// Signed contribution to net worth: liabilities subtract, assets add.

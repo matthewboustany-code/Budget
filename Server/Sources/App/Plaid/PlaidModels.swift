@@ -12,12 +12,16 @@ struct PlaidLinkTokenCreateRequest: Encodable {
     let language: String
     let countryCodes: [String]
     let user: User
-    let products: [String]
+    /// Nil in update mode — Plaid rejects `products` there (the item has them).
+    let products: [String]?
     let webhook: String?
     /// Where the bank sends the user back after an OAuth handoff. Omitted
     /// entirely when unset — Plaid rejects a redirect URI that isn't registered
     /// for the environment, so an empty string here would break sandbox linking.
     let redirectUri: String?
+    /// Set only in update mode: the existing item's access token, so Link
+    /// re-authenticates that item instead of creating a new one.
+    let accessToken: String?
     struct User: Encodable { let clientUserId: String }
 }
 
@@ -110,6 +114,9 @@ struct PlaidTransaction: Decodable {
     let name: String
     let merchantName: String?
     let pending: Bool
+    /// Set on a posted transaction that replaces a pending one; Plaid sends
+    /// the pending id in `removed` in the same sync.
+    let pendingTransactionId: String?
     let personalFinanceCategory: PlaidPFC?
 }
 

@@ -40,7 +40,13 @@ struct AccountSyncService {
     /// Refresh balances for one stored item.
     func refreshBalances(item: PlaidItemRecord) async throws {
         let token = try cipher.decrypt(item.accessTokenEncrypted)
-        let response = try await plaid.getAccounts(accessToken: token)
+        let response: PlaidAccountsResponse
+        do {
+            response = try await plaid.getAccounts(accessToken: token)
+        } catch {
+            try? await PlaidItemStore(db: db).recordFailure(id: item.id, error)
+            throw error
+        }
         let now = Date()
         try await db.write { db in
             for plaidAccount in response.accounts {

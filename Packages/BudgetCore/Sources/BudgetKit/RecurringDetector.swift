@@ -27,7 +27,9 @@ public enum RecurringDetector {
             guard cadence != .irregular else { return nil }
 
             let amounts = sorted.map { $0.amount }
-            let avg = amounts.reduce(Money(0), +) / Money(amounts.count)
+            // Round to cents: an unrounded mean of three T-Mobile charges was
+            // stored (and shown) as 176.4833333… — a bill amount is money.
+            let avg = roundedToCents(amounts.reduce(Money(0), +) / Money(amounts.count))
             // Reject series whose amounts swing wildly (not a stable
             // subscription) or mix inflows and outflows (a charge/refund
             // pattern — Plaid's sandbox "United Airlines" +500/−500 pair
@@ -36,7 +38,9 @@ public enum RecurringDetector {
                   amounts.allSatisfy({ ($0 > 0) == (avg > 0) }) else { return nil }
 
             let last = sorted.last!.date
-            let next = calendar.date(byAdding: .day, value: cadence.approximateDays, to: last)
+            // Step the way projection does: last + 30 days drifts a bill on
+            // the 31st to the 30th, then the 29th…
+            let next = BillProjector.nextOccurrence(after: last, cadence: cadence, calendar: calendar)
 
             return RecurringSeries(
                 id: UUID(),
@@ -57,9 +61,30 @@ public enum RecurringDetector {
     /// "NETFLIX #123" and "Netflix" collapse to one merchant. Public because
     /// it is also the stable key the server uses to match freshly detected
     /// series against stored ones across refreshes.
+    ///
+    /// Punctuation and digits separate words rather than vanishing (the old
+    /// rule turned "NETFLIX.COM" into "netflixcom", which never matched
+    /// Plaid's "Netflix"), web prefixes/suffixes are dropped, and only
+    /// apostrophes and ampersands join letters ("McDonald's", "AT&T").
+    /// Changing this re-keys stored series and rules — see migration
+    /// `v11_merchant_keys`.
     public static func normalize(_ raw: String) -> String {
-        let lowered = raw.lowercased()
-        let stripped = lowered.unicodeScalars.filter {
+        var text = raw.lowercased()
+        text = text.replacingOccurrences(of: #"\bwww\."#, with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"\.(com|net|org|co|io|us|tv)\b"#, with: "",
+                                         options: .regularExpression)
+        let joiners: Set<Unicode.Scalar> = ["'", "\u{2019}", "&"]
+        var words = ""
+        for scalar in text.unicodeScalars where !joiners.contains(scalar) {
+            words.unicodeScalars.append(CharacterSet.letters.contains(scalar) ? scalar : " ")
+        }
+        return words.split(separator: " ").prefix(3).joined(separator: " ")
+    }
+
+    /// The pre-v11 normalizer, kept only so the v11 migration can recognise
+    /// keys it produced. Never use it for new keys.
+    public static func legacyNormalize(_ raw: String) -> String {
+        let stripped = raw.lowercased().unicodeScalars.filter {
             CharacterSet.letters.contains($0) || $0 == " "
         }
         return String(String.UnicodeScalarView(stripped))
@@ -89,6 +114,13 @@ public enum RecurringDetector {
         guard mean > 0 else { return false }
         let maxDeviation = values.map { abs($0 - mean) / mean }.max() ?? 0
         return maxDeviation <= 0.25   // within 25% of the mean
+    }
+
+    static func roundedToCents(_ value: Money) -> Money {
+        var input = value
+        var result = Money()
+        NSDecimalRound(&result, &input, 2, .plain)
+        return result
     }
 
     static func median(_ values: [Int]) -> Int? {

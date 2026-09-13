@@ -15,25 +15,40 @@ final class ReportsStore {
     var spending: SpendingReportResponse?
     var spendingMonth = Month(date: Date())
     var isLoading = false
+    private(set) var lastLoaded: Date?
     var errorMessage: String?
 
-    init(api: APIClient) { self.api = api }
+    init(api: APIClient) {
+        self.api = api
+        // Last-known cards for the first frame; `load()` refreshes them.
+        let flow: CashFlowReportResponse? = api.cached("v1/reports/cashflow", query: Self.cashFlowQuery())
+        cashFlow = flow?.months ?? []
+        spending = api.cached("v1/reports/spending", query: Self.spendingQuery(spendingMonth))
+    }
 
     /// This month's income/expenses — the dashboard card.
     var currentMonth: CashFlowSummary? { cashFlow.last }
+
+    /// The device's month, not the server's (UTC) one.
+    private static func cashFlowQuery() -> [URLQueryItem] {
+        [.init(name: "months", value: "6"), .init(name: "end", value: Month(date: Date()).description)]
+    }
+
+    private static func spendingQuery(_ month: Month) -> [URLQueryItem] {
+        [.init(name: "month", value: month.description)]
+    }
 
     func load() async {
         isLoading = true
         defer { isLoading = false }
         do {
-            async let flow: CashFlowReportResponse = api.get(
-                "v1/reports/cashflow", query: [.init(name: "months", value: "6")])
+            async let flow: CashFlowReportResponse = api.get("v1/reports/cashflow", query: Self.cashFlowQuery())
             async let spend: SpendingReportResponse = api.get(
-                "v1/reports/spending",
-                query: [.init(name: "month", value: spendingMonth.description)])
+                "v1/reports/spending", query: Self.spendingQuery(spendingMonth))
             cashFlow = try await flow.months
             spending = try await spend
             errorMessage = nil
+            lastLoaded = Date()
         } catch {
             errorMessage = friendly(error)
         }

@@ -81,6 +81,28 @@ struct AuthHouseholdTests {
         }
     }
 
+    @Test("A valid session can be refreshed; no session can't start one")
+    func sessionRefresh() async throws {
+        try await withApp { app in
+            let alice = try await signIn(app, token: "dev:alice", name: "Alice")
+            var refreshed: SessionRefreshResponse?
+            try await app.testing().test(.POST, "v1/auth/refresh", headers: bearer(alice.token),
+                afterResponse: { res async throws in
+                    #expect(res.status == .ok)
+                    refreshed = try res.content.decode(SessionRefreshResponse.self)
+                })
+            let token = try #require(refreshed?.token)
+            try await app.testing().test(.GET, "v1/me", headers: bearer(token),
+                afterResponse: { res async throws in
+                    #expect(res.status == .ok)
+                    #expect(try res.content.decode(MeResponse.self).user.id == alice.user.id)
+                })
+
+            try await app.testing().test(.POST, "v1/auth/refresh",
+                afterResponse: { res async in #expect(res.status == .unauthorized) })
+        }
+    }
+
     @Test("Create a household, invite, and partner joins — both see two members")
     func createInviteJoinFlow() async throws {
         try await withApp { app in
@@ -128,6 +150,11 @@ struct AuthHouseholdTests {
                     let me = try res.content.decode(MeResponse.self)
                     #expect(me.members.count == 2)
                 })
+
+            // A fresh sign-in carries the whole household, not just "you".
+            let again = try await signIn(app, token: "dev:alice", name: "Alice")
+            #expect(again.members.count == 2)
+            #expect(Set(again.members.map(\.displayName)) == ["Alice", "Bob"])
         }
     }
 

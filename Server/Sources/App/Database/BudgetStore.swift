@@ -18,6 +18,17 @@ struct BudgetStore {
         }
     }
 
+    /// The earliest month any rollover chain could reach back to: every chain
+    /// starts at a rollover-enabled budget, so no rollup needs transactions
+    /// before this. Nil when rollover was never switched on.
+    func earliestRolloverMonth(householdID: UUID) async throws -> Month? {
+        try await db.read { db in
+            try String.fetchOne(db, sql: """
+                SELECT MIN(month) FROM budgets WHERE household_id = ? AND rollover_enabled = 1
+                """, arguments: [householdID.uuidString]).flatMap(Month.init)
+        }
+    }
+
     /// Insert-or-replace the budget for one category+month (the
     /// `UNIQUE(category_id, month)` pair), returning the stored row.
     func upsert(householdID: UUID, categoryID: UUID, month: Month,

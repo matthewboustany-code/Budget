@@ -18,6 +18,9 @@ final class Session {
 
     private let keychain = Keychain()
     private let tokenAccount = "bearer"
+    /// The last `/me`, so a launch with no network restores the household
+    /// instead of dropping a signed-in user into onboarding.
+    private static let cachedMeKey = "cachedMe"
 
     /// Closure the API client calls to attach the bearer token to a request.
     var tokenReader: () -> String? {
@@ -34,6 +37,11 @@ final class Session {
             ServerConfig.setBaseURL(args[i + 1])
         }
         state = keychain.get(tokenAccount) == nil ? .signedOut : .signedIn
+        if state == .signedIn,
+           let data = UserDefaults.standard.data(forKey: Self.cachedMeKey),
+           let me = try? JSONDecoder().decode(MeResponse.self, from: data) {
+            apply(me)
+        }
     }
 
     var isSignedIn: Bool { state == .signedIn }
@@ -45,7 +53,7 @@ final class Session {
         user = response.user
         household = response.household
         member = response.member
-        if let member { members = [member] }
+        members = response.members.isEmpty ? (member.map { [$0] } ?? []) : response.members
         state = .signedIn
     }
 
@@ -54,10 +62,24 @@ final class Session {
         household = me.household
         member = me.member
         members = me.members
+        if let data = try? JSONEncoder().encode(me) {
+            UserDefaults.standard.set(data, forKey: Self.cachedMeKey)
+        }
     }
 
+    /// Swaps in a refreshed bearer token; identity and household are unchanged.
+    func updateToken(_ token: String) {
+        keychain.set(token, for: tokenAccount)
+    }
+
+    /// Runs on every sign-out; `AppEnvironment` uses it to clear the
+    /// response cache so the next user never sees this one's data.
+    var onSignOut: (() -> Void)?
+
     func signOut() {
+        onSignOut?()
         keychain.delete(tokenAccount)
+        UserDefaults.standard.removeObject(forKey: Self.cachedMeKey)
         user = nil
         household = nil
         member = nil

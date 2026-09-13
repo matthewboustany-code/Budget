@@ -242,6 +242,108 @@ extension AppDatabase {
                 """)
         }
 
+        // `is_active` conflated two things: the user switching a series off, and
+        // detection finding it lapsed. Merging with AND meant a lapse (a skipped
+        // month, a sync gap) switched a series off for good. The user's choice
+        // now lives in its own column; `is_active` becomes detection AND NOT
+        // user_disabled. Backfill treats every inactive row as user-disabled —
+        // we can't tell them apart, and wrongly re-enabling is the worse error.
+        migrator.registerMigration("v4_recurring_user_disabled") { db in
+            try db.execute(sql: """
+                ALTER TABLE recurring_series ADD COLUMN user_disabled INTEGER NOT NULL DEFAULT 0;
+                UPDATE recurring_series SET user_disabled = 1 WHERE is_active = 0;
+                """)
+        }
+
+        // Plaid dates were stored at UTC midnight, which is the previous
+        // evening across the US, so every transaction showed a day early. New
+        // ones are stored at noon UTC; move the old ones the same way. Only
+        // Plaid rows — they're the only dates that were ever day-only.
+        migrator.registerMigration("v5_plaid_dates_at_noon") { db in
+            try db.execute(sql: """
+                UPDATE transactions SET date = substr(date, 1, 10) || 'T12:00:00Z'
+                WHERE plaid_transaction_id IS NOT NULL AND date LIKE '%T00:00:00Z'
+                """)
+        }
+
+        // Household-wide snapshots include private accounts, so a partner's
+        // chart ended in a step down to their visible `current`. Per-account
+        // rows let each caller's series sum only what they can see (and give
+        // per-account balance history). net_worth_snapshots keeps being written
+        // for one release, then goes in a later migration.
+        migrator.registerMigration("v6_account_balance_snapshots") { db in
+            try db.execute(sql: """
+                CREATE TABLE account_balance_snapshots (
+                    id TEXT PRIMARY KEY,
+                    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                    date TEXT NOT NULL,
+                    current TEXT NOT NULL,
+                    available TEXT,
+                    UNIQUE(account_id, date)
+                );
+                """)
+        }
+
+        // memberships(user_id) is read on every authenticated request
+        // (requireMembership) and had no index — UNIQUE(household_id, user_id)
+        // leads with household_id, so it can't serve a user_id lookup. The
+        // transactions index serves the category-filtered list and its date sort.
+        migrator.registerMigration("v7_lookup_indexes") { db in
+            try db.execute(sql: """
+                CREATE INDEX idx_memberships_user ON memberships(user_id);
+                CREATE INDEX idx_tx_household_category_date ON transactions(household_id, category_id, date);
+                """)
+        }
+
+        // Item health. A bank that expires its consent (ITEM_LOGIN_REQUIRED —
+        // the most common Plaid production failure) used to fail every nightly
+        // sync with a log line and nothing in the app. `status` is one of
+        // PlaidItemStatus's raw values; `error_code` is Plaid's code.
+        migrator.registerMigration("v8_plaid_item_health") { db in
+            try db.execute(sql: """
+                ALTER TABLE plaid_items ADD COLUMN status TEXT NOT NULL DEFAULT 'ok';
+                ALTER TABLE plaid_items ADD COLUMN error_code TEXT;
+                ALTER TABLE plaid_items ADD COLUMN last_synced_at TEXT;
+                ALTER TABLE plaid_items ADD COLUMN last_error_at TEXT;
+                """)
+        }
+
+        // Manual accounts: no Plaid item, owner-entered balance and
+        // transactions. AccountType.cash existed with no way to create it.
+        migrator.registerMigration("v9_manual_accounts") { db in
+            try db.execute(sql: "ALTER TABLE accounts ADD COLUMN is_manual INTEGER NOT NULL DEFAULT 0")
+        }
+
+        // Category rules ("always file NETFLIX under Entertainment"), keyed by
+        // RecurringDetector.normalize of the merchant. `category_source` says
+        // who chose a transaction's category — plaid, rule, or user — so a
+        // rule never overrides a person's choice. Rows from before this
+        // migration can't be told apart, so Plaid rows start as `plaid`; only
+        // categorized manual rows (always a person's pick) backfill to `user`.
+        migrator.registerMigration("v10_category_rules") { db in
+            try db.execute(sql: """
+                CREATE TABLE category_rules (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+                    merchant_key TEXT NOT NULL,
+                    category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(household_id, merchant_key)
+                );
+                ALTER TABLE transactions ADD COLUMN category_source TEXT NOT NULL DEFAULT 'plaid';
+                UPDATE transactions SET category_source = 'user'
+                WHERE category_id IS NOT NULL
+                  AND account_id IN (SELECT id FROM accounts WHERE is_manual = 1);
+                """)
+        }
+
+        // RecurringDetector.normalize now splits on punctuation and drops web
+        // suffixes ("NETFLIX.COM" → "netflix", not "netflixcom"), so stored
+        // series and rule keys are recomputed with it.
+        migrator.registerMigration("v11_merchant_keys") { db in
+            try MerchantKeyMigration.rekey(db)
+        }
+
         return migrator
     }
 }

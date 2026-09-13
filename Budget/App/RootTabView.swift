@@ -7,11 +7,12 @@ import SwiftUI
 struct RootTabView: View {
     enum TabID: String, Hashable { case home, accounts, transactions, budget, settings }
 
-    @State private var selection: TabID = LaunchArgs.value(for: "-startTab")
-        .flatMap(TabID.init(rawValue:)) ?? .home
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        TabView(selection: $selection) {
+        @Bindable var env = env
+        TabView(selection: $env.selectedTab) {
             Tab("Home", systemImage: "house.fill", value: TabID.home) {
                 NavigationStack { DashboardView() }
             }
@@ -29,5 +30,23 @@ struct RootTabView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await env.refreshStale() } }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if env.isOffline {
+                Button {
+                    Task { await env.householdStore.refresh() }
+                } label: {
+                    Label("Offline — showing saved data. Tap to retry.", systemImage: "wifi.slash")
+                        .font(.footnote)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+                .background(.orange.opacity(0.9))
+                .foregroundStyle(.white)
+            }
+        }
     }
 }

@@ -8,6 +8,11 @@ struct AccountsView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var linkToken: String?
     @State private var showLink = false
+    /// Set while Link is open in update mode for this connection.
+    @State private var reconnecting: LinkedInstitution?
+    @State private var showManualAccount = false
+    /// The manual account a transaction is being added to.
+    @State private var addingTo: Account?
 
     private var store: AccountStore { env.accountStore }
     private var myMemberID: UUID? { env.session.member?.id }
@@ -18,14 +23,36 @@ struct AccountsView: View {
                 emptyState
             } else {
                 List {
-                    Section { NetWorthCard(netWorth: store.netWorth) }
+                    Section { NetWorthCard(netWorth: store.netWorth, lastSyncedAt: store.lastSyncedAt) }
+                    needsAttentionSection
                     accountSections
                 }
             }
         }
         .navigationTitle("Accounts")
+        // Connect-a-bank fails on the server side (a bad Plaid key, an
+        // unreachable host) far more often than in Link itself, and the store
+        // recorded those failures where nothing rendered them — so the button
+        // looked dead. The empty state has no list to hold an error row, hence
+        // an alert rather than BudgetView's inline Section.
+        .alert("Couldn't connect",
+               isPresented: Binding(get: { store.errorMessage != nil },
+                                    set: { if !$0 { store.errorMessage = nil } })) {
+            Button("OK", role: .cancel) { store.errorMessage = nil }
+        } message: {
+            Text(store.errorMessage ?? "")
+        }
+        .sheet(isPresented: $showManualAccount) {
+            ManualAccountSheet().presentationDetents([.medium, .large])
+        }
+        .sheet(item: $addingTo) { account in
+            ManualTransactionSheet(account: account).presentationDetents([.large])
+        }
         .toolbar { ToolbarItem(placement: .topBarTrailing) { linkMenu } }
-        .task { if store.accounts.isEmpty { await store.load() } }
+        .task {
+            if store.isStale() { await store.load() }
+            await store.loadConnections()   // health changes independently of balances
+        }
         .refreshable { await store.load() }
         .overlay { if store.isLinking { ProgressView("Connecting…").padding().background(.regularMaterial, in: .rect(cornerRadius: 12)) } }
         .fullScreenCover(isPresented: $showLink) {
@@ -34,9 +61,14 @@ struct AccountsView: View {
                     linkToken: linkToken,
                     onSuccess: { publicToken in
                         showLink = false
-                        Task { await store.exchange(publicToken: publicToken, institutionName: nil) }
+                        if let connection = reconnecting {
+                            reconnecting = nil
+                            Task { await store.finishReconnect(connection) }
+                        } else {
+                            Task { await store.exchange(publicToken: publicToken, institutionName: nil) }
+                        }
                     },
-                    onExit: { showLink = false })
+                    onExit: { showLink = false; reconnecting = nil })
                 .ignoresSafeArea()
             }
         }
@@ -45,6 +77,9 @@ struct AccountsView: View {
     private var linkMenu: some View {
         Menu {
             Button { connectBank() } label: { Label("Connect a bank", systemImage: "link") }
+            Button { showManualAccount = true } label: {
+                Label("Add manual account", systemImage: "square.and.pencil")
+            }
             #if DEBUG
             Button { Task { await store.linkSandbox() } } label: {
                 Label("Link sandbox account (dev)", systemImage: "ladybug")
@@ -63,6 +98,7 @@ struct AccountsView: View {
         } actions: {
             Button("Connect a bank", action: connectBank)
                 .buttonStyle(.borderedProminent)
+            Button("Add a manual account") { showManualAccount = true }
             #if DEBUG
             Button("Link sandbox account (dev)") { Task { await store.linkSandbox() } }
                 .font(.footnote)
@@ -76,10 +112,15 @@ struct AccountsView: View {
         ForEach(groups.keys.sorted { $0.sortOrder < $1.sortOrder }, id: \.self) { type in
             Section(type.groupTitle) {
                 ForEach(groups[type] ?? []) { account in
-                    AccountRow(account: account,
-                               canEdit: account.ownerMemberID == myMemberID,
-                               onToggleVisibility: { toggleVisibility(account) },
-                               onToggleHidden: { Task { await store.update(account, isHidden: !account.isHidden) } })
+                    NavigationLink {
+                        AccountDetailView(account: account)
+                    } label: {
+                        AccountRow(account: account,
+                                   canEdit: account.ownerMemberID == myMemberID,
+                                   onToggleVisibility: { toggleVisibility(account) },
+                                   onToggleHidden: { Task { await store.update(account, isHidden: !account.isHidden) } },
+                                   onAddTransaction: { addingTo = account })
+                    }
                 }
             }
         }
@@ -87,11 +128,50 @@ struct AccountsView: View {
         if !hidden.isEmpty {
             Section("Hidden") {
                 ForEach(hidden) { account in
-                    AccountRow(account: account,
-                               canEdit: account.ownerMemberID == myMemberID,
-                               onToggleVisibility: { toggleVisibility(account) },
-                               onToggleHidden: { Task { await store.update(account, isHidden: false) } })
+                    NavigationLink {
+                        AccountDetailView(account: account)
+                    } label: {
+                        AccountRow(account: account,
+                                   canEdit: account.ownerMemberID == myMemberID,
+                                   onToggleVisibility: { toggleVisibility(account) },
+                                   onToggleHidden: { Task { await store.update(account, isHidden: false) } })
+                    }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder private var needsAttentionSection: some View {
+        if !store.needsAttention.isEmpty {
+            Section {
+                ForEach(store.needsAttention) { connection in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(connection.displayName)
+                            Text(connection.status.explanation)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Reconnect") { reconnect(connection) }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                    }
+                }
+            } header: {
+                Label("Needs attention", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            } footer: {
+                Text("These banks stopped syncing. Reconnecting signs in again and picks up where it left off.")
+            }
+        }
+    }
+
+    private func reconnect(_ connection: LinkedInstitution) {
+        Task {
+            if let token = await store.fetchUpdateLinkToken(for: connection) {
+                reconnecting = connection
+                linkToken = token
+                showLink = true
             }
         }
     }
@@ -114,6 +194,8 @@ struct AccountsView: View {
 
 private struct NetWorthCard: View {
     let netWorth: NetWorthResponse?
+    /// Newest successful bank sync, so "is this current?" has an answer.
+    let lastSyncedAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -128,6 +210,11 @@ private struct NetWorthCard: View {
                     .foregroundStyle(.red)
             }
             .font(.footnote)
+
+            if let lastSyncedAt {
+                Text("Updated \(lastSyncedAt.formatted(.relative(presentation: .named)))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
 
             if let series = netWorth?.series, series.count >= 2 {
                 Chart(series) { point in
@@ -156,6 +243,8 @@ private struct AccountRow: View {
     let canEdit: Bool
     let onToggleVisibility: () -> Void
     let onToggleHidden: () -> Void
+    /// Offered for manual accounts only; Plaid transactions come from the bank.
+    var onAddTransaction: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -172,6 +261,8 @@ private struct AccountRow: View {
                 if let institution = account.institutionName {
                     Text(account.mask.map { "\(institution) ••\($0)" } ?? institution)
                         .font(.caption).foregroundStyle(.secondary)
+                } else if account.isManual {
+                    Text("Manual").font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer()
@@ -191,6 +282,11 @@ private struct AccountRow: View {
                         ? Label("Unhide", systemImage: "eye")
                         : Label("Hide", systemImage: "eye.slash")
                 }
+                if account.isManual, let onAddTransaction {
+                    Button { onAddTransaction() } label: {
+                        Label("Add transaction", systemImage: "plus.circle")
+                    }
+                }
             }
         }
     }
@@ -200,6 +296,17 @@ private struct AccountRow: View {
 
 func currency(_ amount: Money, code: String = "USD") -> String {
     amount.formatted(.currency(code: code))
+}
+
+extension PlaidItemStatus {
+    var explanation: String {
+        switch self {
+        case .ok: return "Syncing normally"
+        case .error: return "Sign-in expired or needs an update"
+        case .pendingExpiration: return "Access expires soon — reconnect to avoid a gap"
+        case .revoked: return "Access was revoked at the bank"
+        }
+    }
 }
 
 extension AccountType {

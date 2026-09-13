@@ -23,10 +23,14 @@ func registerBudgetRoutes(_ routes: RoutesBuilder) {
             month = Month(date: Date())
         }
 
+        // Only as far back as a rollover chain can reach, not all history.
+        let earliest = try await req.budgets.earliestRolloverMonth(householdID: household.id)
+        let from = min(earliest ?? month, month).startDate()
         async let allBudgets = req.budgets.listAll(householdID: household.id)
         async let tree = req.categories.list(householdID: household.id)
         async let transactions = req.transactions.allVisible(householdID: household.id,
-                                                             memberID: member.id)
+                                                             memberID: member.id,
+                                                             from: from, to: month.endDate())
 
         // Income groups are excluded from spending budgets (they feed the cash
         // flow reports instead).

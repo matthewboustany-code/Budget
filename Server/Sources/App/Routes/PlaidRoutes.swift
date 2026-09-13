@@ -45,9 +45,57 @@ func registerPlaidRoutes(_ routes: RoutesBuilder) {
     // disconnect UI. Scoped to what they own: you can only unlink your own.
     plaid.get("items") { req async throws -> [LinkedInstitution] in
         let (_, member) = try await req.requireMembership()
-        return try await req.plaidItems.forMember(member.id).map {
-            LinkedInstitution(id: $0.id, institutionName: $0.institutionName)
+        return try await req.plaidItems.forMember(member.id).map(\.linked)
+    }
+
+    // POST /v1/plaid/sync — "Sync now": pull every connection the caller owns
+    // instead of waiting for a webhook or the nightly cron. Each sync is
+    // several Plaid calls, so it's limited per user; the limiter sits inside
+    // AuthMiddleware so it keys by user rather than by IP.
+    authed.grouped(RateLimitMiddleware(rule: .init(limit: 6, window: 60 * 60), name: "plaid-sync"))
+        .post("plaid", "sync") { req async throws -> [LinkedInstitution] in
+            let (_, member) = try await req.requireMembership()
+            for item in try await req.plaidItems.forMember(member.id) {
+                do {
+                    try await req.accountSync.refreshBalances(item: item)
+                    try await req.transactionSync.sync(item: item)
+                } catch {
+                    // One broken bank mustn't stop the others; its status
+                    // (set by the sync) is what the app shows.
+                    req.logger.error("Sync now failed for item \(item.plaidItemID): \(error)")
+                }
+            }
+            return try await req.plaidItems.forMember(member.id).map(\.linked)
         }
+
+    // POST /v1/plaid/items/:id/update-link-token — a Link token in update
+    // mode, to repair an item whose login expired. Owner-only.
+    plaid.post("items", ":id", "update-link-token") { req async throws -> LinkTokenResponse in
+        let (_, member) = try await req.requireMembership()
+        let user = try req.requireUser()
+        let item = try await ownedItem(req, member: member)
+        let config = req.appConfig
+        let accessToken = try TokenCipher(secret: config.plaidTokenEncKey).decrypt(item.accessTokenEncrypted)
+        let response = try await req.plaid.createLinkToken(
+            clientUserId: user.id.uuidString, clientName: "Budget",
+            products: config.plaidProducts, webhook: config.plaidWebhookURL,
+            redirectUri: config.plaidRedirectURI, accessToken: accessToken)
+        return LinkTokenResponse(linkToken: response.linkToken,
+                                 expiration: response.expiration.flatMap(ISO8601DateFormatter().date(from:)))
+    }
+
+    // POST /v1/plaid/items/:id/sync — right after a reconnect: refresh
+    // balances and pull transactions now. Success clears the item's error, so
+    // "Needs attention" goes away without waiting for the next webhook.
+    plaid.post("items", ":id", "sync") { req async throws -> LinkedInstitution in
+        let (_, member) = try await req.requireMembership()
+        let item = try await ownedItem(req, member: member)
+        try await req.accountSync.refreshBalances(item: item)
+        try await req.transactionSync.sync(item: item)
+        guard let fresh = try await req.plaidItems.find(id: item.id) else {
+            throw Abort(.notFound, reason: "Connection not found")
+        }
+        return fresh.linked
     }
 
     // DELETE /v1/plaid/items/:id — disconnect one institution. Removes the Item
@@ -103,12 +151,63 @@ func registerPlaidRoutes(_ routes: RoutesBuilder) {
                 throw Abort(.unauthorized, reason: "Webhook verification failed")
             }
         }
-        struct Webhook: Content { var webhook_type: String?; var item_id: String? }
-        guard let hook = try? req.content.decode(Webhook.self), let itemID = hook.item_id else { return .ok }
-        if let item = try? await PlaidItemStore(db: req.appDatabase.dbPool).find(plaidItemID: itemID) {
-            try? await req.transactionSync.sync(item: item)
+        struct Webhook: Content {
+            struct PlaidWebhookError: Content { var error_code: String? }
+            var webhook_type: String?
+            var webhook_code: String?
+            var item_id: String?
+            var error: PlaidWebhookError?
+        }
+        guard let hook = try? req.content.decode(Webhook.self), let itemID = hook.item_id,
+              let item = try? await req.plaidItems.find(plaidItemID: itemID) else { return .ok }
+
+        // ITEM webhooks report connection health, not new data: record it so
+        // the app can ask the owner to reconnect.
+        if hook.webhook_type == "ITEM" {
+            switch hook.webhook_code {
+            case "ERROR":
+                try await req.plaidItems.markProblem(id: item.id, status: .error,
+                                                     errorCode: hook.error?.error_code)
+            case "PENDING_EXPIRATION", "PENDING_DISCONNECT":
+                try await req.plaidItems.markProblem(id: item.id, status: .pendingExpiration, errorCode: nil)
+            case "USER_PERMISSION_REVOKED", "USER_ACCOUNT_REVOKED":
+                try await req.plaidItems.markProblem(id: item.id, status: .revoked, errorCode: nil)
+            case "LOGIN_REPAIRED":
+                try await req.plaidItems.markHealthy(id: item.id)
+            default:
+                break
+            }
+            return .ok
+        }
+
+        do {
+            try await req.transactionSync.sync(item: item)
+        } catch {
+            // Still 200: a non-2xx makes Plaid retry a sync that will fail
+            // the same way. The sync marks item-level failures on the item;
+            // the log is how anything else gets noticed.
+            req.logger.error("Webhook sync failed for item \(item.plaidItemID): \(error)")
         }
         return .ok
+    }
+}
+
+/// The caller's own item named by `:id`, or 404 — never 403, so a route
+/// can't be used to probe for items belonging to anyone else.
+private func ownedItem(_ req: Request, member: HouseholdMember) async throws -> PlaidItemRecord {
+    guard let id = req.parameters.get("id").flatMap({ UUID(uuidString: $0) }),
+          let item = try await req.plaidItems.find(id: id),
+          item.ownerMemberID == member.id else {
+        throw Abort(.notFound, reason: "Connection not found")
+    }
+    return item
+}
+
+extension PlaidItemRecord {
+    /// The app-facing view of this connection, health included.
+    var linked: LinkedInstitution {
+        LinkedInstitution(id: id, institutionName: institutionName, status: status,
+                          errorCode: errorCode, lastSyncedAt: lastSyncedAt)
     }
 }
 

@@ -9,13 +9,23 @@ import BudgetModels
 struct CategoryStore {
     let db: DatabasePool
 
-    func list(householdID: UUID) async throws -> CategoriesResponse {
-        try await db.read { db in
+    func list(householdID: UUID, includeArchived: Bool = false) async throws -> CategoriesResponse {
+        let archivedFilter = includeArchived ? "" : " AND is_archived = 0"
+        return try await db.read { db in
             let groups = try Row.fetchAll(db, sql: "SELECT * FROM category_groups WHERE household_id = ? ORDER BY sort_order",
                                           arguments: [householdID.uuidString]).map(CategoryGroup.init(row:))
-            let categories = try Row.fetchAll(db, sql: "SELECT * FROM categories WHERE household_id = ? AND is_archived = 0 ORDER BY sort_order",
+            let categories = try Row.fetchAll(db, sql: "SELECT * FROM categories WHERE household_id = ?\(archivedFilter) ORDER BY sort_order",
                                               arguments: [householdID.uuidString]).map(BudgetCategory.init(row:))
             return CategoriesResponse(groups: groups, categories: categories)
+        }
+    }
+
+    /// Every category including archived ones — for naming historical
+    /// transactions in reports. Pickers keep using `list`.
+    func listIncludingArchived(householdID: UUID) async throws -> [BudgetCategory] {
+        try await db.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM categories WHERE household_id = ? ORDER BY sort_order",
+                             arguments: [householdID.uuidString]).map(BudgetCategory.init(row:))
         }
     }
 
@@ -61,7 +71,13 @@ struct CategoryStore {
                 try db.execute(sql: "UPDATE categories SET icon = ? WHERE id = ?", arguments: [icon, id.uuidString])
             }
             if let colorHex = body.colorHex {
-                try db.execute(sql: "UPDATE categories SET color_hex = ? WHERE id = ?", arguments: [colorHex, id.uuidString])
+                // PATCH can't distinguish "leave the color alone" (absent) from
+                // "go back to automatic" (clear it) with one optional field, so
+                // an empty string is the explicit clear. Without it there'd be
+                // no way out of a color once one was picked.
+                let value: String? = colorHex.isEmpty ? nil : colorHex
+                try db.execute(sql: "UPDATE categories SET color_hex = ? WHERE id = ?",
+                               arguments: [value, id.uuidString])
             }
             if let sortOrder = body.sortOrder {
                 try db.execute(sql: "UPDATE categories SET sort_order = ? WHERE id = ?", arguments: [sortOrder, id.uuidString])

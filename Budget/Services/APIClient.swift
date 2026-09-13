@@ -15,6 +15,12 @@ final class APIClient {
     private let pinnedBaseURL: URL?
     private var baseURL: URL { pinnedBaseURL ?? ServerConfig.baseURL }
     private let tokenProvider: () -> String?
+    /// Called on any 401 except from sign-in itself (where 401 means a bad
+    /// Apple token, not an expired session). Set by `AppEnvironment` to sign
+    /// out, so no store has to remember to check.
+    var onUnauthorized: (() -> Void)?
+    /// Last-good GET responses; written on every successful GET.
+    let cache: ResponseCache
 
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -29,10 +35,27 @@ final class APIClient {
 
     init(baseURL: URL? = nil,
          session: URLSession = .shared,
+         cache: ResponseCache? = nil,
          tokenProvider: @escaping () -> String?) {
         self.pinnedBaseURL = baseURL
         self.session = session
+        // Built here, not as a default argument: defaults are evaluated
+        // outside the main actor, and ResponseCache is main-actor isolated.
+        self.cache = cache ?? ResponseCache()
         self.tokenProvider = tokenProvider
+    }
+
+    /// The last successful response for this exact GET, if one is cached.
+    /// Synchronous on purpose: stores call it in `init` so the first frame
+    /// has data.
+    func cached<Response: Decodable>(_ path: String, query: [URLQueryItem] = []) -> Response? {
+        let key = ResponseCache.key(path: Self.normalized(path), query: query)
+        guard let data = cache.data(for: key) else { return nil }
+        return try? decoder.decode(Response.self, from: data)
+    }
+
+    private static func normalized(_ path: String) -> String {
+        path.hasPrefix("/") ? String(path.dropFirst()) : path
     }
 
     // MARK: - Verbs
@@ -57,8 +80,19 @@ final class APIClient {
         try await send(path, method: "PUT", body: body)
     }
 
+    /// Raw bytes for endpoints that don't answer JSON (the CSV export).
+    func getData(_ path: String, query: [URLQueryItem] = []) async throws -> Data {
+        try await perform(path, method: "GET", query: query, body: Optional<Empty>.none).0
+    }
+
     func delete(_ path: String) async throws {
         let _: Empty = try await send(path, method: "DELETE", body: Optional<Empty>.none)
+    }
+
+    /// DELETE for routes that answer with the updated resource rather than a
+    /// bare 200 (a goal's contribution ledger, for one).
+    func delete<Response: Decodable>(_ path: String) async throws -> Response {
+        try await send(path, method: "DELETE", body: Optional<Empty>.none)
     }
 
     // MARK: - Core
@@ -67,6 +101,29 @@ final class APIClient {
         _ path: String, method: String,
         query: [URLQueryItem] = [],
         body: Body?) async throws -> Response {
+
+        let (data, trimmedPath) = try await perform(path, method: method, query: query, body: body)
+
+        if Response.self == Empty.self { return Empty() as! Response }
+        if data.isEmpty { throw APIClientError.decoding("Empty response body") }
+        do {
+            let value = try decoder.decode(Response.self, from: data)
+            // Cache only after a clean decode, so a malformed body never
+            // becomes the next launch's first frame.
+            if method == "GET" { cache.store(data, for: ResponseCache.key(path: trimmedPath, query: query)) }
+            return value
+        } catch {
+            throw APIClientError.decoding(String(describing: error))
+        }
+    }
+
+    /// The transport half: URL, auth, status handling. Returns the raw bytes
+    /// and the normalized path. Used directly for non-JSON responses (the CSV
+    /// export), which must never enter the JSON response cache.
+    private func perform<Body: Encodable>(
+        _ path: String, method: String,
+        query: [URLQueryItem] = [],
+        body: Body?) async throws -> (Data, String) {
 
         // Join base URL + path predictably (paths carry their own "v1/" prefix).
         var base = baseURL.absoluteString
@@ -96,6 +153,7 @@ final class APIClient {
             throw APIClientError.transport("No HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 401 && trimmedPath != "v1/auth/apple" { onUnauthorized?() }
             if let apiError = try? decoder.decode(APIErrorResponse.self, from: data) {
                 throw APIClientError.server(status: http.statusCode, reason: apiError.reason)
             }
@@ -103,13 +161,7 @@ final class APIClient {
                                         reason: HTTPURLResponse.localizedString(forStatusCode: http.statusCode))
         }
 
-        if Response.self == Empty.self { return Empty() as! Response }
-        if data.isEmpty { throw APIClientError.decoding("Empty response body") }
-        do {
-            return try decoder.decode(Response.self, from: data)
-        } catch {
-            throw APIClientError.decoding(String(describing: error))
-        }
+        return (data, trimmedPath)
     }
 }
 

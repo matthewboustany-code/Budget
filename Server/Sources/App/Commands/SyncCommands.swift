@@ -50,6 +50,7 @@ struct NetWorthSnapshotCommand: AsyncCommand {
             let computed = ReportCalculator.netWorth(accounts: accounts)
             let point = NetWorthPoint(date: today, assets: computed.assets, liabilities: computed.liabilities)
             try await store.snapshot(householdID: household.id, point: point)
+            try await store.snapshotAccounts(accounts, date: today)
         }
         app.logger.info("Snapshotted net worth for \(households.count) household(s)")
     }

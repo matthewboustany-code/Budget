@@ -35,6 +35,26 @@ enum PlaidError: Error, CustomStringConvertible {
     }
 }
 
+/// Without this, every upstream Plaid failure reaches the app as a bare 500
+/// and the only way to learn the cause is to read the server log — which is
+/// how an unconfigured dashboard looked identical to a broken server.
+///
+/// Upstream failures are **502**, not 500: the request was fine, Plaid
+/// refused it. Plaid's own message is passed through because it is the whole
+/// diagnostic ("configure a Data Transparency use case", "ITEM_LOGIN_REQUIRED")
+/// and this is a self-hosted app for two people, not a public API where an
+/// upstream vendor's wording would leak something.
+extension PlaidError: AbortError {
+    var status: HTTPResponseStatus {
+        switch self {
+        case .badURL: return .internalServerError
+        case .api: return .badGateway
+        }
+    }
+
+    var reason: String { description }
+}
+
 /// Typed Plaid API client. `clientId`/`secret` are injected into every request
 /// body (Plaid's auth model). Base URL is chosen by environment.
 struct PlaidClient: Sendable {
@@ -57,14 +77,20 @@ struct PlaidClient: Sendable {
     /// to bring them back. Without it those institutions simply fail in Link
     /// while smaller ones keep working — a confusing partial failure, which is
     /// why this is wired up before it is needed rather than after.
+    ///
+    /// Passing `accessToken` creates the token in **update mode**, which repairs
+    /// an existing item (ITEM_LOGIN_REQUIRED) rather than linking a new one.
+    /// `products` is then omitted entirely: Plaid rejects it in update mode.
     func createLinkToken(clientUserId: String, clientName: String,
                          products: [String], webhook: String?,
-                         redirectUri: String? = nil) async throws -> PlaidLinkTokenCreateResponse {
+                         redirectUri: String? = nil,
+                         accessToken: String? = nil) async throws -> PlaidLinkTokenCreateResponse {
         try await call("/link/token/create", PlaidLinkTokenCreateRequest(
             clientId: clientId, secret: secret, clientName: clientName,
             language: "en", countryCodes: ["US"],
             user: .init(clientUserId: clientUserId),
-            products: products, webhook: webhook, redirectUri: redirectUri))
+            products: accessToken == nil ? products : nil,
+            webhook: webhook, redirectUri: redirectUri, accessToken: accessToken))
     }
 
     func exchangePublicToken(_ publicToken: String) async throws -> PlaidExchangeResponse {

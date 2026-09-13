@@ -231,10 +231,58 @@ struct BudgetTests {
                 afterResponse: { res async in #expect(res.status == .ok) })
             #expect(try await categories(app, token: alice.token).categories.contains { $0.id == petsID } == false)
 
+            // …but listed, flagged, when asked for — the Restore list.
+            var withArchived: CategoriesResponse?
+            try await app.testing().test(.GET, "v1/categories?includeArchived=1", headers: bearer(alice.token),
+                afterResponse: { res async throws in withArchived = try res.content.decode(CategoriesResponse.self) })
+            #expect(try #require(withArchived).categories.first { $0.id == petsID }?.isArchived == true)
+
+            // Restore it, and move it to the top of its group.
+            try await app.testing().test(.PATCH, "v1/categories/\(petsID)", headers: bearer(alice.token),
+                beforeRequest: { try $0.content.encode(UpdateCategoryRequest(sortOrder: 0, isArchived: false)) },
+                afterResponse: { res async throws in
+                    let restored = try res.content.decode(BudgetCategory.self)
+                    #expect(!restored.isArchived)
+                    #expect(restored.sortOrder == 0)
+                })
+            let lifestyleNow = try await categories(app, token: alice.token).categories
+                .filter { $0.groupID == lifestyle.id }.sorted { $0.sortOrder < $1.sortOrder }
+            #expect(lifestyleNow.first?.id == petsID)
+
             // A blank name is rejected.
             try await app.testing().test(.POST, "v1/categories", headers: bearer(alice.token),
                 beforeRequest: { try $0.content.encode(CreateCategoryRequest(groupID: lifestyle.id, name: "   ")) },
                 afterResponse: { res async in #expect(res.status == .badRequest) })
+        }
+    }
+
+    @Test("A category's color can be set, changed, left alone, and cleared")
+    func categoryColorLifecycle() async throws {
+        try await withApp { app in
+            let alice = try await setupAlice(app)
+            let groceries = try await category(app, token: alice.token, named: "Groceries")
+            #expect(groceries.colorHex == nil)   // seeded categories start automatic
+
+            func patch(_ body: UpdateCategoryRequest) async throws -> BudgetCategory {
+                var out: BudgetCategory?
+                try await app.testing().test(.PATCH, "v1/categories/\(groceries.id)", headers: bearer(alice.token),
+                    beforeRequest: { try $0.content.encode(body) },
+                    afterResponse: { res async throws in
+                        #expect(res.status == .ok)
+                        out = try res.content.decode(BudgetCategory.self)
+                    })
+                return try #require(out)
+            }
+
+            #expect(try await patch(.init(colorHex: "#22C55E")).colorHex == "#22C55E")
+            #expect(try await patch(.init(colorHex: "#3B82F6")).colorHex == "#3B82F6")
+            // Absent means "don't touch the color" — renaming must not drop it.
+            let renamed = try await patch(.init(name: "Food"))
+            #expect(renamed.name == "Food")
+            #expect(renamed.colorHex == "#3B82F6")
+            // Empty string is the explicit "back to automatic"; without it a
+            // category could never lose a color once it had one.
+            #expect(try await patch(.init(colorHex: "")).colorHex == nil)
         }
     }
 }

@@ -15,8 +15,31 @@ struct TransactionStore {
         var accountID: UUID?
         var categoryID: UUID?
         var search: String?
-        var offset: Int = 0
+        var uncategorized = false
+        var unreviewed = false
+        /// Opaque keyset cursor from the previous page's `nextCursor`.
+        var cursor: String?
         var limit: Int = 50
+    }
+
+    /// Keyset cursor: the sort key of the last row on a page. Unlike an
+    /// offset, it stays correct when a sync inserts rows mid-scroll — an
+    /// offset would then skip or repeat rows.
+    struct Cursor {
+        let date: String, createdAt: String, id: String
+
+        init(date: String, createdAt: String, id: String) {
+            self.date = date; self.createdAt = createdAt; self.id = id
+        }
+
+        init?(_ encoded: String) {
+            guard let data = Data(base64Encoded: encoded),
+                  let parts = String(data: data, encoding: .utf8)?.split(separator: "|", omittingEmptySubsequences: false),
+                  parts.count == 3 else { return nil }
+            date = String(parts[0]); createdAt = String(parts[1]); id = String(parts[2])
+        }
+
+        var encoded: String { Data("\(date)|\(createdAt)|\(id)".utf8).base64EncodedString() }
     }
 
     func list(householdID: UUID, memberID: UUID, filter: Filter) async throws -> TransactionPage {
@@ -35,42 +58,99 @@ struct TransactionStore {
         if let to = filter.to { sql += " AND t.date <= ?"; args.append(DBFormat.string(to)) }
         if let accountID = filter.accountID { sql += " AND t.account_id = ?"; args.append(accountID.uuidString) }
         if let categoryID = filter.categoryID { sql += " AND t.category_id = ?"; args.append(categoryID.uuidString) }
+        if filter.uncategorized { sql += " AND t.category_id IS NULL" }
+        if filter.unreviewed { sql += " AND t.is_reviewed = 0" }
         if let search = filter.search, !search.isEmpty {
-            sql += " AND (t.name LIKE ? OR t.merchant_name LIKE ?)"
-            args.append("%\(search)%"); args.append("%\(search)%")
+            // Escape LIKE's wildcards so "100%" matches the literal text.
+            let escaped = search.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "%", with: "\\%")
+                .replacingOccurrences(of: "_", with: "\\_")
+            sql += #" AND (t.name LIKE ? ESCAPE '\' OR t.merchant_name LIKE ? ESCAPE '\')"#
+            args.append("%\(escaped)%"); args.append("%\(escaped)%")
         }
-        sql += " ORDER BY t.date DESC, t.created_at DESC LIMIT ? OFFSET ?"
+        if let raw = filter.cursor {
+            guard let cursor = Cursor(raw) else { throw Abort(.badRequest, reason: "Invalid cursor") }
+            sql += " AND (t.date, t.created_at, t.id) < (?, ?, ?)"
+            args.append(cursor.date); args.append(cursor.createdAt); args.append(cursor.id)
+        }
+        // `id` breaks ties so the order — and the cursor — is total.
+        sql += " ORDER BY t.date DESC, t.created_at DESC, t.id DESC LIMIT ?"
         args.append(filter.limit + 1)   // fetch one extra to detect another page
-        args.append(filter.offset)
 
         // Map inside the read: `Row` isn't Sendable, so `[Row]` can't cross the
-        // async boundary — on Linux that fails to type-check outright.
+        // async boundary — on Linux that fails to type-check outright. The raw
+        // sort-key strings come along so the cursor matches the SQL exactly.
         let arguments = StatementArguments(args)
-        var transactions = try await db.read { db in
-            try Row.fetchAll(db, sql: sql, arguments: arguments)
-                .map(Transaction.init(row:))
+        var rows = try await db.read { db in
+            try Row.fetchAll(db, sql: sql, arguments: arguments).map { row in
+                (tx: Transaction(row: row),
+                 key: Cursor(date: row["date"], createdAt: row["created_at"], id: row["id"]))
+            }
         }
         var nextCursor: String?
-        if transactions.count > filter.limit {
-            transactions.removeLast()
-            nextCursor = String(filter.offset + filter.limit)
+        if rows.count > filter.limit {
+            rows.removeLast()
+            nextCursor = rows.last?.key.encoded
         }
-        return TransactionPage(transactions: transactions, nextCursor: nextCursor)
+        return TransactionPage(transactions: rows.map(\.tx), nextCursor: nextCursor)
     }
 
-    /// Every transaction visible to the member, unpaginated — input to the
-    /// budget rollup, which needs prior months for rollover. Same visibility
-    /// rule as `list` (a private account hides all its transactions).
-    func allVisible(householdID: UUID, memberID: UUID) async throws -> [Transaction] {
-        try await db.read { db in
+    /// How many visible transactions still need review / a category — one
+    /// aggregate query, same visibility rule as `list`.
+    func reviewSummary(householdID: UUID, memberID: UUID) async throws -> ReviewSummary {
+        let sql = """
+            SELECT COALESCE(SUM(t.is_reviewed = 0), 0) AS unreviewed,
+                   COALESCE(SUM(t.category_id IS NULL), 0) AS uncategorized
+            FROM transactions t
+            JOIN accounts a ON a.id = t.account_id
+            WHERE t.household_id = ?
+              AND (a.visibility = 'shared' OR a.owner_member_id = ?)
+              AND (t.visibility = 'shared' OR t.owner_member_id = ?)
+            """
+        let args: [(any DatabaseValueConvertible)?] = [householdID.uuidString, memberID.uuidString, memberID.uuidString]
+        let arguments = StatementArguments(args)
+        return try await db.read { db in
+            let row = try Row.fetchOne(db, sql: sql, arguments: arguments)
+            return ReviewSummary(unreviewed: row?["unreviewed"] ?? 0, uncategorized: row?["uncategorized"] ?? 0)
+        }
+    }
+
+    /// Every transaction visible to the member within `[from, to)`,
+    /// unpaginated — input to the budget rollup and reports. Same visibility
+    /// rule as `list` (a private account hides all its transactions). Callers
+    /// should bound the range: unbounded, this loads the household's whole
+    /// history.
+    func allVisible(householdID: UUID, memberID: UUID,
+                    from: Date? = nil, to: Date? = nil) async throws -> [Transaction] {
+        var sql = """
+            SELECT t.* FROM transactions t
+            JOIN accounts a ON a.id = t.account_id
+            WHERE t.household_id = ?
+              AND (a.visibility = 'shared' OR a.owner_member_id = ?)
+              AND (t.visibility = 'shared' OR t.owner_member_id = ?)
+            """
+        var args: [(any DatabaseValueConvertible)?] = [householdID.uuidString, memberID.uuidString, memberID.uuidString]
+        if let from { sql += " AND t.date >= ?"; args.append(DBFormat.string(from)) }
+        if let to { sql += " AND t.date < ?"; args.append(DBFormat.string(to)) }
+        let arguments = StatementArguments(args)
+        return try await db.read { db in
+            try Row.fetchAll(db, sql: sql, arguments: arguments).map(Transaction.init(row:))
+        }
+    }
+
+    /// Every transaction in the household within `[from, to)` regardless of
+    /// visibility — for operator commands (bill reminders) only, never for a
+    /// member-facing response. Mirrors `RecurringStore.listAll`.
+    func allInHousehold(householdID: UUID, from: Date, to: Date) async throws -> [Transaction] {
+        let args: [(any DatabaseValueConvertible)?] = [
+            householdID.uuidString, DBFormat.string(from), DBFormat.string(to)
+        ]
+        let arguments = StatementArguments(args)
+        return try await db.read { db in
             try Row.fetchAll(db, sql: """
-                SELECT t.* FROM transactions t
-                JOIN accounts a ON a.id = t.account_id
-                WHERE t.household_id = ?
-                  AND (a.visibility = 'shared' OR a.owner_member_id = ?)
-                  AND (t.visibility = 'shared' OR t.owner_member_id = ?)
-                """, arguments: [householdID.uuidString, memberID.uuidString, memberID.uuidString])
-                .map(Transaction.init(row:))
+                SELECT * FROM transactions
+                WHERE household_id = ? AND date >= ? AND date < ?
+                """, arguments: arguments).map(Transaction.init(row:))
         }
     }
 
@@ -91,10 +171,12 @@ struct TransactionStore {
 
     func update(id: UUID, _ body: UpdateTransactionRequest) async throws {
         try await db.write { db in
+            // A person's choice is marked `user` so no rule ever overrides it.
             if body.clearCategory == true {
-                try db.execute(sql: "UPDATE transactions SET category_id = NULL WHERE id = ?", arguments: [id.uuidString])
+                try db.execute(sql: "UPDATE transactions SET category_id = NULL, category_source = 'user' WHERE id = ?",
+                               arguments: [id.uuidString])
             } else if let categoryID = body.categoryID {
-                try db.execute(sql: "UPDATE transactions SET category_id = ? WHERE id = ?",
+                try db.execute(sql: "UPDATE transactions SET category_id = ?, category_source = 'user' WHERE id = ?",
                                arguments: [categoryID.uuidString, id.uuidString])
             }
             if let note = body.note {
@@ -117,9 +199,53 @@ struct TransactionStore {
         }
     }
 
+    /// A transaction the owner entered on a manual account.
+    func insertManual(_ tx: Transaction) async throws {
+        try await db.write { db in
+            try db.execute(sql: """
+                INSERT INTO transactions (id, household_id, account_id, owner_member_id, amount, date,
+                    name, merchant_name, category_id, status, note, is_reviewed, visibility, created_at,
+                    category_source)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, arguments: [tx.id.uuidString, tx.householdID.uuidString, tx.accountID.uuidString,
+                                 tx.ownerMemberID.uuidString, DBFormat.string(tx.amount), DBFormat.string(tx.date),
+                                 tx.name, tx.merchantName, tx.categoryID?.uuidString, tx.status.rawValue,
+                                 tx.note, tx.isReviewed ? 1 : 0, tx.visibility.rawValue,
+                                 DBFormat.string(tx.createdAt),
+                                 // A category picked at entry is a person's choice;
+                                 // none picked leaves the row open to rules.
+                                 tx.categoryID == nil ? "plaid" : "user"])
+        }
+    }
+
+    /// Deletes one transaction; its comments and reactions cascade. Routes
+    /// only allow this on manual accounts — Plaid rows belong to the bank.
+    func delete(id: UUID) async throws {
+        try await db.write { db in
+            try db.execute(sql: "DELETE FROM transactions WHERE id = ?", arguments: [id.uuidString])
+        }
+    }
+
+    /// Re-point the pending row `oldPlaidID` at its posted replacement, keeping
+    /// the row's UUID — and with it category, note, splits, comments and
+    /// reactions. Returns false when no pending row exists (nothing to keep).
+    @discardableResult
+    static func repointPending(from oldPlaidID: String, to tx: Transaction, _ db: Database) throws -> Bool {
+        guard let plaidID = tx.plaidTransactionID else { return false }
+        try db.execute(sql: """
+            UPDATE transactions SET plaid_transaction_id = ?, amount = ?, date = ?, name = ?,
+                merchant_name = ?, status = ?
+            WHERE plaid_transaction_id = ?
+            """, arguments: [plaidID, DBFormat.string(tx.amount), DBFormat.string(tx.date), tx.name,
+                             tx.merchantName, tx.status.rawValue, oldPlaidID])
+        return db.changesCount > 0
+    }
+
     /// Insert a Plaid transaction, or update only Plaid-owned fields if it exists
     /// (so user edits — category, note, reviewed, visibility — are preserved).
-    static func upsertPlaid(_ tx: Transaction, _ db: Database) throws {
+    /// `categorySource` is `rule` when a category rule chose the category,
+    /// else `plaid`; it only matters on insert.
+    static func upsertPlaid(_ tx: Transaction, categorySource: String = "plaid", _ db: Database) throws {
         guard let plaidID = tx.plaidTransactionID else { return }
         if let existing = try Row.fetchOne(db, sql: "SELECT id FROM transactions WHERE plaid_transaction_id = ?",
                                            arguments: [plaidID]) {
@@ -133,13 +259,13 @@ struct TransactionStore {
             try db.execute(sql: """
                 INSERT INTO transactions (id, household_id, account_id, owner_member_id, amount, date,
                     name, merchant_name, category_id, status, note, is_reviewed, visibility, splits_json,
-                    plaid_transaction_id, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    plaid_transaction_id, created_at, category_source)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, arguments: [tx.id.uuidString, tx.householdID.uuidString, tx.accountID.uuidString,
                                  tx.ownerMemberID.uuidString, DBFormat.string(tx.amount), DBFormat.string(tx.date),
                                  tx.name, tx.merchantName, tx.categoryID?.uuidString, tx.status.rawValue,
                                  tx.note, tx.isReviewed ? 1 : 0, tx.visibility.rawValue, nil, plaidID,
-                                 DBFormat.string(tx.createdAt)])
+                                 DBFormat.string(tx.createdAt), categorySource])
         }
     }
 }

@@ -9,6 +9,7 @@ import BudgetModels
 extension AppleSignInRequest: @retroactive Content {}
 extension RegisterDeviceRequest: @retroactive Content {}
 extension AuthResponse: @retroactive Content {}
+extension SessionRefreshResponse: @retroactive Content {}
 extension MeResponse: @retroactive Content {}
 extension CreateHouseholdRequest: @retroactive Content {}
 extension JoinHouseholdRequest: @retroactive Content {}
@@ -21,11 +22,14 @@ extension ExchangePublicTokenRequest: @retroactive Content {}
 extension LinkedInstitution: @retroactive Content {}
 extension SandboxLinkRequest: @retroactive Content {}
 extension UpdateAccountRequest: @retroactive Content {}
+extension CreateManualAccountRequest: @retroactive Content {}
+extension CreateTransactionRequest: @retroactive Content {}
 extension NetWorthResponse: @retroactive Content {}
 
 // Transactions, categories & couples layer (P3)
 extension Transaction: @retroactive Content {}
 extension TransactionPage: @retroactive Content {}
+extension ReviewSummary: @retroactive Content {}
 extension TransactionDetailResponse: @retroactive Content {}
 extension UpdateTransactionRequest: @retroactive Content {}
 extension BudgetCategory: @retroactive Content {}
@@ -35,6 +39,10 @@ extension TransactionComment: @retroactive Content {}
 extension TransactionReaction: @retroactive Content {}
 extension AddCommentRequest: @retroactive Content {}
 extension AddReactionRequest: @retroactive Content {}
+extension CategoryRule: @retroactive Content {}
+extension CreateCategoryRuleRequest: @retroactive Content {}
+extension CategoryRulePreview: @retroactive Content {}
+extension CreateCategoryRuleResponse: @retroactive Content {}
 
 // Budgets & category CRUD (P4)
 extension Budget: @retroactive Content {}
@@ -51,8 +59,15 @@ extension Goal: @retroactive Content {}
 extension CreateGoalRequest: @retroactive Content {}
 extension UpdateGoalRequest: @retroactive Content {}
 extension AddContributionRequest: @retroactive Content {}
+extension UpdateContributionRequest: @retroactive Content {}
+extension AccountBalancePoint: @retroactive Content {}
+extension AccountBalanceHistoryResponse: @retroactive Content {}
 extension GoalDetailResponse: @retroactive Content {}
 
 // Reports (P6)
 extension CashFlowReportResponse: @retroactive Content {}
 extension SpendingReportResponse: @retroactive Content {}
+
+// Partner activity feed (v1.1 §5.1)
+extension ActivityEvent: @retroactive Content {}
+extension ActivityFeedResponse: @retroactive Content {}

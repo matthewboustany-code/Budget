@@ -36,7 +36,7 @@ struct BillsView: View {
         .navigationTitle("Bills")
         .refreshable { await store.redetect() }
         .task {
-            if store.series.isEmpty { await store.load() }
+            if store.isStale() { await store.load() }
         }
     }
 
@@ -44,8 +44,9 @@ struct BillsView: View {
 
     @ViewBuilder
     private var upcomingSections: some View {
+        let paid = store.bills.filter { $0.status == .paid }
         let overdue = store.bills.filter { $0.status == .overdue }
-        let upcoming = store.bills.filter { $0.status != .overdue }
+        let upcoming = store.bills.filter { $0.status == .upcoming }
         if store.bills.isEmpty {
             emptyState("No upcoming bills",
                        message: "Bills appear here once recurring charges are detected in your transactions.")
@@ -60,6 +61,11 @@ struct BillsView: View {
                     ForEach(upcoming) { BillRow(bill: $0) }
                 }
                 monthTotalFooter(upcoming: upcoming, overdue: overdue)
+            }
+            if !paid.isEmpty {
+                Section("Paid") {
+                    ForEach(paid) { BillRow(bill: $0) }
+                }
             }
         }
     }
@@ -124,9 +130,22 @@ private struct BillRow: View {
                     .foregroundStyle(bill.status == .overdue ? .red : .secondary)
             }
             Spacer()
+            if bill.status == .paid {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .accessibilityLabel("Paid")
+            }
             Text(currency(bill.amount))
                 .monospacedDigit()
-                .foregroundStyle(bill.status == .overdue ? .red : .primary)
+                .foregroundStyle(amountColor)
+        }
+    }
+
+    private var amountColor: Color {
+        switch bill.status {
+        case .overdue: return .red
+        case .paid: return .secondary
+        default: return .primary
         }
     }
 
@@ -134,6 +153,9 @@ private struct BillRow: View {
         let days = Calendar.current.dateComponents(
             [.day], from: Calendar.current.startOfDay(for: Date()),
             to: Calendar.current.startOfDay(for: bill.dueDate)).day ?? 0
+        if bill.status == .paid {
+            return "Paid — due \(bill.dueDate.formatted(date: .abbreviated, time: .omitted))"
+        }
         switch days {
         case ..<0: return "Due \(bill.dueDate.formatted(date: .abbreviated, time: .omitted)) — overdue"
         case 0: return "Due today"
