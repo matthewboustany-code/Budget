@@ -35,6 +35,26 @@ enum PlaidError: Error, CustomStringConvertible {
     }
 }
 
+/// Without this, every upstream Plaid failure reaches the app as a bare 500
+/// and the only way to learn the cause is to read the server log — which is
+/// how an unconfigured dashboard looked identical to a broken server.
+///
+/// Upstream failures are **502**, not 500: the request was fine, Plaid
+/// refused it. Plaid's own message is passed through because it is the whole
+/// diagnostic ("configure a Data Transparency use case", "ITEM_LOGIN_REQUIRED")
+/// and this is a self-hosted app for two people, not a public API where an
+/// upstream vendor's wording would leak something.
+extension PlaidError: AbortError {
+    var status: HTTPResponseStatus {
+        switch self {
+        case .badURL: return .internalServerError
+        case .api: return .badGateway
+        }
+    }
+
+    var reason: String { description }
+}
+
 /// Typed Plaid API client. `clientId`/`secret` are injected into every request
 /// body (Plaid's auth model). Base URL is chosen by environment.
 struct PlaidClient: Sendable {
