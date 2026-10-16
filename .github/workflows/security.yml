@@ -28,7 +28,7 @@ jobs:
     name: Dependency scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Pinned by digest-less tag for readability; bump deliberately. Trivy is
       # run as its official container so there is no action version to guess at
@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Repo root context, so the ../Packages/BudgetCore path dependency
       # resolves — same as docker compose does.
