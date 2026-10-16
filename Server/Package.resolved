@@ -6,17 +6,17 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/vapor/apns.git",
       "state" : {
-        "revision" : "be523e3dc2a054d1ab51cb610c015dbbffb1d1ac",
-        "version" : "5.0.0"
+        "revision" : "931d55641392b8243bf888b97555144ab418f55d",
+        "version" : "5.1.0"
       }
     },
     {
       "identity" : "apnswift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/swift-server-community/APNSwift.git",
+      "location" : "https://github.com/kylebrowning/APNSwift.git",
       "state" : {
-        "revision" : "81eb92b6d5cbea9dac154becedf316c05189a47a",
-        "version" : "6.6.0"
+        "revision" : "cebd61a41a9febfdb7a1942e0af853e5956ccffc",
+        "version" : "7.0.2"
       }
     },
     {
